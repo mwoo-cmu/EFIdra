@@ -1,12 +1,11 @@
 package efidra;
 
 import java.io.BufferedReader;
-import java.io.FileNotFoundException;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -15,6 +14,8 @@ import org.postgresql.shaded.com.ongres.scram.common.bouncycastle.pbkdf2.Arrays;
 
 import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
+
+import ghidra.util.Msg;
 
 public class EFIGUIDNames {
 	private HashMap<String, String> guids;
@@ -38,7 +39,12 @@ public class EFIGUIDNames {
 	public EFIGUIDNames(boolean loadDefaults) {
 		guids = new HashMap<>();
 		if (loadDefaults) {
-			parseGUIDsFromURL("https://fwupd.org/lvfs/shards/export/csv");
+			try {
+				parseGUIDsFromURL("https://fwupd.org/lvfs/shards/export/csv");
+			} catch (CsvValidationException | IOException e) {
+				Msg.showError(e, null, "GUIDs Error", "Error loading default GUIDs");
+				e.printStackTrace();
+			}
 		}
 	}
 
@@ -76,24 +82,15 @@ public class EFIGUIDNames {
 	 * internal HashMap mapping GUIDs to their readable names
 	 * 
 	 * @param link	the URL from which to retrieve the GUIDs CSV
+	 * @throws IOException 	If the URL cannot be opened or the CSVReader cannot be closed
+	 * @throws CsvValidationException 	if the CSVReader encounters an error
 	 */
-	public void parseGUIDsFromURL(String link) {
+	public void parseGUIDsFromURL(String link) throws IOException, CsvValidationException {
 		// may need to be public to be accessible by scripts
 		// want a script to allow users to specify a file path or url
-		try {
-			URL url = new URL(link);
-			BufferedReader buffer = new BufferedReader(new InputStreamReader(url.openStream()));
-			parseGUIDsFromCSV(buffer);
-		} catch (MalformedURLException e) {
-			// TODO display to user somehow
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (CsvValidationException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		URL url = new URL(link);
+		BufferedReader buffer = new BufferedReader(new InputStreamReader(url.openStream()));
+		parseGUIDsFromCSV(buffer);
 	}
 	
 	/**
@@ -101,21 +98,11 @@ public class EFIGUIDNames {
 	 * object's internal HashMap mapping GUIDs to their readable names
 	 * 
 	 * @param path	the path to the file on the file system
+	 * @throws IOException 	If the URL cannot be opened or the CSVReader cannot be closed
+	 * @throws CsvValidationException 	if the CSVReader encounters an error 
 	 */
-	public void parseGUIDsFromFile(String path) {
-		FileReader reader;
-		try {
-			reader = new FileReader(path);
-			parseGUIDsFromCSV(reader);
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (CsvValidationException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+	public void parseGUIDsFromFile(File file) throws CsvValidationException, IOException {
+		FileReader reader = new FileReader(file);
+		parseGUIDsFromCSV(reader);
 	}
 }

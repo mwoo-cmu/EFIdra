@@ -16,10 +16,17 @@
 package efidra;
 
 import java.awt.BorderLayout;
+import java.io.File;
+import java.io.IOException;
 
 import javax.swing.*;
 
+import com.opencsv.exceptions.CsvValidationException;
+
 import docking.ActionContext;
+import docking.action.builder.ActionBuilder;
+import docking.tool.ToolConstants;
+import docking.widgets.filechooser.GhidraFileChooser;
 import docking.ComponentProvider;
 import docking.action.DockingAction;
 import docking.action.ToolBarData;
@@ -30,6 +37,7 @@ import ghidra.framework.plugintool.*;
 import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra.util.HelpLocation;
 import ghidra.util.Msg;
+import ghidra.app.script.AskDialog;
 import resources.Icons;
 
 /**
@@ -38,15 +46,17 @@ import resources.Icons;
 //@formatter:off
 @PluginInfo(
 	status = PluginStatus.STABLE,
-	packageName = ExamplesPluginPackage.NAME,
-	category = PluginCategoryNames.EXAMPLES,
-	shortDescription = "Plugin short description goes here.",
+	packageName = EfidraPluginPackage.NAME,
+	category = PluginCategoryNames.MISC,
+	shortDescription = "Plugin suite for analyzing UEFI ROMs",
 	description = "Plugin long description goes here."
 )
 //@formatter:on
-public class efidraPlugin extends ProgramPlugin {
+public class efidraPlugin extends Plugin {
 
-	MyProvider provider;
+//	EFIdraProvider provider;
+	
+	EFIGUIDNames guids;
 
 	/**
 	 * Plugin constructor.
@@ -57,15 +67,78 @@ public class efidraPlugin extends ProgramPlugin {
 		super(tool);
 
 		// TODO: Customize provider (or remove if a provider is not desired)
-		String pluginName = getName();
-		provider = new MyProvider(this, pluginName);
+//		String pluginName = getName();
+//		provider = new EFIdraProvider(this, pluginName);
+		guids = new EFIGUIDNames(); 
+//		buildPanel();
+		createActions();
 
 		// TODO: Customize help (or remove if help is not desired)
-		String topicName = this.getClass().getPackage().getName();
-		String anchorName = "HelpAnchor";
-		provider.setHelpLocation(new HelpLocation(topicName, anchorName));
+//		String topicName = this.getClass().getPackage().getName();
+//		String anchorName = "HelpAnchor";
+//		provider.setHelpLocation(new HelpLocation(topicName, anchorName));
+	}
+	
+	// Customize GUI
+	private void buildPanel() {
+//		panel = new JPanel(new BorderLayout());
 	}
 
+	private void createActions() {
+		new ActionBuilder("Load GUIDs URL", getName())
+			.menuPath("&EFIdra", "GUID Database", "Load From URL")
+			.menuIcon(null)
+			.onAction(c -> {
+				AskDialog urlDialog = new AskDialog("Load GUID Database", "URL", AskDialog.STRING, "");
+				String URL = urlDialog.getTextFieldValue();
+//				String URL = askString("Load GUID Database", "URL");
+				JPanel panel = new JPanel(new BorderLayout());
+				try {
+					guids.parseGUIDsFromURL(URL);
+				} catch (CsvValidationException | IOException e) {
+					Msg.showError(e, panel, "EFIdra GUIDs", "Error loading GUIDs from " + URL);
+					e.printStackTrace();
+					return;
+				}
+				Msg.showInfo(getClass(), panel, "EFIdra GUIDs", "GUIDs loaded successfuly.");
+				
+			})
+			.enabled(true)
+			.description("Load a GUID database from a URL link")
+			
+			.buildAndInstall(tool);
+		new ActionBuilder("Load GUIDs File", getName())
+			.menuPath("&EFIdra", "GUID Database", "Load From File")
+			.menuIcon(null)
+			.onAction(c -> {
+				GhidraFileChooser fileChooser = new GhidraFileChooser(null);
+				File file = fileChooser.getSelectedFile();
+				JPanel panel = new JPanel(new BorderLayout());
+				try {
+					guids.parseGUIDsFromFile(file);
+				} catch (CsvValidationException | IOException e) {
+					Msg.showError(e, panel, "EFIdra GUIDs", "Error loading GUIDs from " + file.toString());
+					e.printStackTrace();
+					return;
+				}
+				Msg.showInfo(fileChooser, panel, "EFIdra GUIDs", file.toString());
+			})
+			.enabled(true)
+			.description("Load a GUID database from a CSV file")
+			.buildAndInstall(tool);
+		new ActionBuilder("Clear GUID Databse", getName())
+			.menuPath("&EFIdra", "GUID Database", "Empty Database")
+			.menuIcon(null)
+			.onAction(c -> {
+				guids.clearGUIDs();
+				JPanel panel = new JPanel(new BorderLayout());
+				Msg.showError(null, panel, "EFIdra GUIDs", "Database cleared");
+			})
+			.enabled(true)
+			.description("Clear the GUID to readable name mappings")
+			.buildAndInstall(tool);
+	}
+	
 	@Override
 	public void init() {
 		super.init();
@@ -73,44 +146,5 @@ public class efidraPlugin extends ProgramPlugin {
 		// TODO: Acquire services if necessary
 	}
 
-	// TODO: If provider is desired, it is recommended to move it to its own file
-	private static class MyProvider extends ComponentProvider {
 
-		private JPanel panel;
-		private DockingAction action;
-
-		public MyProvider(Plugin plugin, String owner) {
-			super(plugin.getTool(), owner, owner);
-			buildPanel();
-			createActions();
-		}
-
-		// Customize GUI
-		private void buildPanel() {
-			panel = new JPanel(new BorderLayout());
-			JTextArea textArea = new JTextArea(5, 25);
-			textArea.setEditable(false);
-			panel.add(new JScrollPane(textArea));
-			setVisible(true);
-		}
-
-		// TODO: Customize actions
-		private void createActions() {
-			action = new DockingAction("My Action", getName()) {
-				@Override
-				public void actionPerformed(ActionContext context) {
-					Msg.showInfo(getClass(), panel, "Custom Action", "Hello!");
-				}
-			};
-			action.setToolBarData(new ToolBarData(Icons.ADD_ICON, null));
-			action.setEnabled(true);
-			action.markHelpUnnecessary();
-			dockingTool.addLocalAction(this, action);
-		}
-
-		@Override
-		public JComponent getComponent() {
-			return panel;
-		}
-	}
 }
