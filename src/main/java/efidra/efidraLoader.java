@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.*;
 
 import ghidra.app.util.Option;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractProgramWrapperLoader;
@@ -33,6 +34,9 @@ import ghidra.util.task.TaskMonitor;
  */
 public class efidraLoader extends AbstractProgramWrapperLoader {
 
+	// "_FVH" stored little endian
+	private static final int EFI_FVH_SIGNATURE = 0x4856465f;
+	
 	@Override
 	public String getName() {
 
@@ -52,12 +56,32 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		return loadSpecs;
 	}
 
+	private List<EFIFirmwareVolume> findFirmwareVolumes(ByteProvider provider) throws IOException {
+		// all UEFI images are little endian
+		BinaryReader reader = new BinaryReader(provider, true);
+		// do I need to set ptr index?
+		reader.setPointerIndex(0);
+		long fileLen = provider.length();
+		long curIdx = 0;
+		List<EFIFirmwareVolume> volumes = new ArrayList<>();
+		while (curIdx < fileLen) {
+			int next = reader.readNextInt();
+			if (next == EFI_FVH_SIGNATURE) {
+				reader.setPointerIndex(reader.getPointerIndex() - EFIFirmwareVolume.EFI_SIG_OFFSET);
+				// after this call, reader will be pointed at the end of the 
+				// last firmware volume, so next header will be the next fv
+				volumes.add(new EFIFirmwareVolume(reader));
+			}
+		}
+		return volumes;
+	}
+	
 	@Override
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
 			Program program, TaskMonitor monitor, MessageLog log)
 			throws CancelledException, IOException {
-
 		// TODO: Load the bytes from 'provider' into the 'program'.
+		
 	}
 
 	@Override

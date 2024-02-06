@@ -17,7 +17,8 @@ import com.opencsv.exceptions.CsvValidationException;
 
 import ghidra.util.Msg;
 
-public class EFIGUIDNames {
+public class EFIGUIDs {
+	public static final int EFI_GUID_LEN = 16;
 	private HashMap<String, String> guids;
 	
 	public static String bytesToGUIDString(byte[] bytes) {
@@ -36,7 +37,7 @@ public class EFIGUIDNames {
 				.append(formatter.formatHex(Arrays.copyOfRange(bytes, 10, 16))).toString();
 	}
 	
-	public EFIGUIDNames(boolean loadDefaults) {
+	public EFIGUIDs(boolean loadDefaults) {
 		guids = new HashMap<>();
 		if (loadDefaults) {
 			try {
@@ -48,7 +49,7 @@ public class EFIGUIDNames {
 		}
 	}
 
-	public EFIGUIDNames() {
+	public EFIGUIDs() {
 		this(true);
 	}
 	

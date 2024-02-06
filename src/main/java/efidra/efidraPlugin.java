@@ -56,7 +56,7 @@ public class efidraPlugin extends Plugin {
 
 //	EFIdraProvider provider;
 	
-	EFIGUIDNames guids;
+	EFIGUIDs guids;
 
 	/**
 	 * Plugin constructor.
@@ -69,7 +69,7 @@ public class efidraPlugin extends Plugin {
 		// TODO: Customize provider (or remove if a provider is not desired)
 //		String pluginName = getName();
 //		provider = new EFIdraProvider(this, pluginName);
-		guids = new EFIGUIDNames(); 
+		guids = new EFIGUIDs(); 
 //		buildPanel();
 		createActions();
 
@@ -105,7 +105,6 @@ public class efidraPlugin extends Plugin {
 			})
 			.enabled(true)
 			.description("Load a GUID database from a URL link")
-			
 			.buildAndInstall(tool);
 		new ActionBuilder("Load GUIDs File", getName())
 			.menuPath("&EFIdra", "GUID Database", "Load From File")
@@ -146,5 +145,55 @@ public class efidraPlugin extends Plugin {
 		// TODO: Acquire services if necessary
 	}
 
-
+////// TODO: If provider is desired, it is recommended to move it to its own file
+//private static class EFIdraProvider extends ComponentProvider {
+//
+//	private JPanel panel;
+//	private DockingAction action;
+//
+//	public EFIdraProvider(Plugin plugin, String owner) {
+//		super(plugin.getTool(), owner, owner);
+//		buildPanel();
+////		action = new DockingAction("My Action", getName()) {
+////			@Override
+////			public void actionPerformed(ActionContext context) {
+////				Msg.showInfo(getClass(), panel, "Custom Action", "Hello!");
+////			}
+////		};
+////		action.setToolBarData(new ToolBarData(Icons.ADD_ICON, null));
+////		action.setEnabled(true);
+////		action.markHelpUnnecessary();
+////		dockingTool.addLocalAction(this, action);
+//		createActions();
+//	}
+//
+//	// Customize GUI
+//	private void buildPanel() {
+//		panel = new JPanel(new BorderLayout());
+////		JTextArea textArea = new JTextArea(5, 25);
+////		textArea.setEditable(false);
+////		panel.add(new JScrollPane(textArea));
+//		setVisible(true);
+//	}
+//
+//	// TODO: Customize actions
+//	private void createActions() {
+//		action = new ActionBuilder("Load GUID Database", getName())
+//				.description("Load a GUID database to map labels from")
+////				.menuPath("&efidraPlugin", "Load GUID database")
+//				.menuPath(ToolConstants.MENU_TOOLS, "Load GUID database")
+//				.menuIcon(null)
+//				.onAction(c -> {
+//					Msg.showInfo(getClass(), panel, "Test", "EFIGuid Action");
+//				})
+//				.enabled(true)
+//				
+//				.buildAndInstall(dockingTool);
+//	}
+//
+//	@Override
+//	public JComponent getComponent() {
+//		return panel;
+//	}
+//}
 }
