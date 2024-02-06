@@ -7,32 +7,21 @@ import java.util.List;
 import ghidra.app.util.bin.BinaryReader;
 
 public class EFIFirmwareVolume {
-	private class EFIFVBlockMap {
-		private int numBlocks;
-		private int length;
-		private List<byte[]> blocks;
+	private class EFIFVBlockMapEntry {
+		/*
+		 * typedef struct {
+		 *   /// The number of sequential blocks which are of the same size.
+		 *   UINT32    NumBlocks;
+		 *   /// The size of the blocks.
+		 *   UINT32    Length;
+		 * } EFI_FV_BLOCK_MAP_ENTRY;
+		 */
+		public int numBlocks;
+		public int length;
 		
-		public EFIFVBlockMap(BinaryReader reader, long fvEnd) throws IOException {
-			blocks = new ArrayList<>();
-			while (readNextBlockMapEntry(reader, fvEnd)) {
-				for (int i = 0; i < numBlocks; i++) {
-					blocks.add(reader.readNextByteArray(length));
-				}
-			}
-		}
-		
-		private boolean readNextBlockMapEntry(BinaryReader reader, long fvEnd) throws IOException {
-			/*
-			 * typedef struct {
-			 *   /// The number of sequential blocks which are of the same size.
-			 *   UINT32    NumBlocks;
-			 *   /// The size of the blocks.
-			 *   UINT32    Length;
-			 * } EFI_FV_BLOCK_MAP_ENTRY;
-			 */
-			numBlocks = reader.readNextInt();
-			length = reader.readNextInt();
-			return numBlocks != 0 && length != 0 && reader.getPointerIndex() <= fvEnd;
+		public EFIFVBlockMapEntry(int numBlocks, int length) {
+			this.numBlocks = numBlocks;
+			this.length = length;
 		}
 	}
 	
@@ -81,7 +70,7 @@ public class EFIFirmwareVolume {
 	private short extHeaderOffset;
 	private byte reserved;
 	private byte revision;
-	private EFIFVBlockMap blockMap;
+	private List<EFIFVBlockMapEntry> blockMap;
 	
 	/*
 	 * /// Extension header pointed by ExtHeaderOffset of volume header.
@@ -97,27 +86,8 @@ public class EFIFirmwareVolume {
 	
 	private boolean checksumValid;
 	
-	/**
-	 * 
-	 * @param reader A BinaryReader with its index at the start of this FV header 
-	 * @throws IOException if an exception occurs while reading from the reader
-	 */
-	public EFIFirmwareVolume(BinaryReader reader) throws IOException {
-		long basePointer = reader.getPointerIndex();
-		// header
-		zeroVector = reader.readNextByteArray(ZERO_VECTOR_LEN);
-		fileSystemGuid = EFIGUIDs.bytesToGUIDString(
-				reader.readNextByteArray(EFIGUIDs.EFI_GUID_LEN));
-		fvLength = reader.readNextLong();
-		signature = reader.readNextInt();
-		attributes = reader.readNextInt();
-		headerLength = reader.readNextShort();
-		checksum = reader.readNextShort();
-		extHeaderOffset = reader.readNextShort();
-		reserved = reader.readNextByte();
-		revision = reader.readNextByte();
-				
-		// https://github.com/al3xtjames/ghidra-firmware-utils/blob/master/src/main/java/firmware/uefi_fv/UEFIFirmwareVolumeHeader.java
+	private void parseHeader(BinaryReader reader, long basePointer) throws IOException {
+		// from https://github.com/al3xtjames/ghidra-firmware-utils/blob/master/src/main/java/firmware/uefi_fv/UEFIFirmwareVolumeHeader.java
 		// check header 16-bit sums to 0
 		reader.setPointerIndex(basePointer);
 		int headerSum = 0;
@@ -138,9 +108,50 @@ public class EFIFirmwareVolume {
 		} else {
 			reader.setPointerIndex(basePointer + headerLength);
 		}
+	}
+	
+	private void readBlockMap(BinaryReader reader, long headerEnd) throws IOException {
+		while (reader.getPointerIndex() <= headerEnd) {
+			int numBlocks = reader.readNextInt();
+			int length = reader.readNextInt();
+			if (numBlocks == 0 && length == 0) {
+				return;
+			}
+			blockMap.add(new EFIFVBlockMapEntry(numBlocks, length));
+		}
+	}
+	
+	private void readFileSystems(BinaryReader reader, long fvEnd) throws IOException {
+		
+	}
+	
+	/**
+	 * 
+	 * @param reader A BinaryReader with its index at the start of this FV header 
+	 * @throws IOException if an exception occurs while reading from the reader
+	 */
+	public EFIFirmwareVolume(BinaryReader reader) throws IOException {
+		long basePointer = reader.getPointerIndex();
+		// header
+		zeroVector = reader.readNextByteArray(ZERO_VECTOR_LEN);
+		fileSystemGuid = EFIGUIDs.bytesToGUIDString(
+				reader.readNextByteArray(EFIGUIDs.EFI_GUID_LEN));
+		fvLength = reader.readNextLong();
+		signature = reader.readNextInt();
+		attributes = reader.readNextInt();
+		headerLength = reader.readNextShort();
+		checksum = reader.readNextShort();
+		extHeaderOffset = reader.readNextShort();
+		reserved = reader.readNextByte();
+		revision = reader.readNextByte();
+
+		blockMap = new ArrayList<>();
+		readBlockMap(reader, basePointer + headerLength);
+				
+		parseHeader(reader, basePointer);
 		
 		long fvEnd = basePointer + fvLength;
-		blockMap = new EFIFVBlockMap(reader, fvEnd);
+		readFileSystems(reader, fvEnd);
 		
 		reader.setPointerIndex(fvEnd);
 	}

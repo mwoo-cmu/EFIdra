@@ -25,6 +25,10 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractProgramWrapperLoader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.framework.model.DomainObject;
+import ghidra.program.model.lang.CompilerSpecDescription;
+import ghidra.program.model.lang.LanguageCompilerSpecPair;
+import ghidra.program.model.lang.LanguageDescription;
+import ghidra.program.model.lang.Processor;
 import ghidra.program.model.listing.Program;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -43,16 +47,34 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		// TODO: Name the loader.  This name must match the name of the loader in the .opinion 
 		// files.
 
-		return "EFIdra loader";
+		return "EFIdra UEFI Loader";
 	}
 
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
 
-		// TODO: Examine the bytes in 'provider' to determine if this loader can load it.  If it 
-		// can load it, return the appropriate load specifications.
-
+		// TODO: Examine the bytes in 'provider' to determine if this loader can load it.
+		
+		// load language/compiler pairs for the processor supported by UEFI
+		// should we create a processor type for Itanium as well?
+		for (String processor : new String[] {"x86", "AARCH64"}) {
+			List<LanguageDescription> langDescs = 
+					getLanguageService().getLanguageDescriptions(Processor.toProcessor(processor));
+			for (LanguageDescription langDesc : langDescs) {
+				// UEFI only supports little endian
+				if (langDesc.getEndian().isBigEndian())
+					continue;
+				Collection<CompilerSpecDescription> compDescs = 
+						langDesc.getCompatibleCompilerSpecDescriptions();
+				for (CompilerSpecDescription compDesc : compDescs) {
+					loadSpecs.add(new LoadSpec(this, 0, 
+							new LanguageCompilerSpecPair(langDesc.getLanguageID(), 
+									compDesc.getCompilerSpecID()), false));
+				}
+			}
+		}
+		
 		return loadSpecs;
 	}
 
@@ -81,7 +103,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			Program program, TaskMonitor monitor, MessageLog log)
 			throws CancelledException, IOException {
 		// TODO: Load the bytes from 'provider' into the 'program'.
-		
+		List<EFIFirmwareVolume> volumes = findFirmwareVolumes(provider);
 	}
 
 	@Override
