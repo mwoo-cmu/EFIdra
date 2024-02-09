@@ -2,6 +2,7 @@ package efidra;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import ghidra.app.util.bin.BinaryReader;
@@ -25,9 +26,12 @@ public class EFIFirmwareVolume {
 		}
 	}
 	
-	private static final int ZERO_VECTOR_LEN = 16;
+	public static final int ZERO_VECTOR_LEN = 16;
 	// from zeroVector + fileSystemGuid + fvLength
 	public static final int EFI_SIG_OFFSET = 16 + 16 + 8;
+	private static final int EFI_FV_OFFSET = 8;
+	
+	private static byte[] FREE_SPACE_HEADER = new byte[EFIFirmwareFile.EFI_FF_HEADER_LEN];
 	
 	/* from https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Pi/PiFirmwareVolume.h
 	 * /// Describes the features and layout of the firmware volume.
@@ -85,8 +89,11 @@ public class EFIFirmwareVolume {
 	private int extHeaderSize;
 	
 	private boolean checksumValid;
+	private long basePointer;
 	
-	private void parseHeader(BinaryReader reader, long basePointer) throws IOException {
+	private List<EFIFirmwareFile> files;
+	
+	private void parseHeader(BinaryReader reader) throws IOException {
 		// from https://github.com/al3xtjames/ghidra-firmware-utils/blob/master/src/main/java/firmware/uefi_fv/UEFIFirmwareVolumeHeader.java
 		// check header 16-bit sums to 0
 		reader.setPointerIndex(basePointer);
@@ -122,7 +129,18 @@ public class EFIFirmwareVolume {
 	}
 	
 	private void readFileSystems(BinaryReader reader, long fvEnd) throws IOException {
-		
+		long curIdx = reader.getPointerIndex();
+		reader.align(EFI_FV_OFFSET);
+		while (curIdx < fvEnd) {
+			if (Arrays.equals(reader.readByteArray(curIdx, EFIFirmwareFile.EFI_FF_HEADER_LEN), FREE_SPACE_HEADER)) {
+				// free space, skip to end 
+				reader.setPointerIndex(fvEnd);
+				break;
+			}
+			files.add(new EFIFirmwareFile(reader));
+			reader.align(EFI_FV_OFFSET);
+			curIdx = reader.getPointerIndex();
+		}
 	}
 	
 	/**
@@ -131,7 +149,11 @@ public class EFIFirmwareVolume {
 	 * @throws IOException if an exception occurs while reading from the reader
 	 */
 	public EFIFirmwareVolume(BinaryReader reader) throws IOException {
-		long basePointer = reader.getPointerIndex();
+		// is there some better way to do this? please tell me there is
+		Arrays.fill(FREE_SPACE_HEADER, (byte)0xff);
+		
+		basePointer = reader.getPointerIndex();
+		files = new ArrayList<>();
 		// header
 		zeroVector = reader.readNextByteArray(ZERO_VECTOR_LEN);
 		fileSystemGuid = EFIGUIDs.bytesToGUIDString(
@@ -148,11 +170,31 @@ public class EFIFirmwareVolume {
 		blockMap = new ArrayList<>();
 		readBlockMap(reader, basePointer + headerLength);
 				
-		parseHeader(reader, basePointer);
+		parseHeader(reader);
 		
 		long fvEnd = basePointer + fvLength;
 		readFileSystems(reader, fvEnd);
 		
 		reader.setPointerIndex(fvEnd);
 	}
+	
+	public long getBasePointer() {
+		return basePointer;
+	}
+	
+	public String getFileSystemGUID() {
+		return fileSystemGuid;
+	}
+	
+	public String getNameGUID() {
+		return fvName == null ? fileSystemGuid : fvName;
+	}
+	
+	public List<EFIFirmwareFile> getFiles() {
+		return files;
+	}
+	
+//	public String getFileSystemGUIDName() {
+//		return 
+//	}
 }

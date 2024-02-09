@@ -136,6 +136,23 @@ public class efidraPlugin extends Plugin {
 			.enabled(true)
 			.description("Clear the GUID to readable name mappings")
 			.buildAndInstall(tool);
+		new ActionBuilder("Convert GUID", getName())
+			.menuPath("&EFIdra", "GUID Database", "Convert GUID")
+			.menuIcon(null)
+			.onAction(c -> {
+				AskDialog guidDialog = new AskDialog("Load GUID Database", "URL", AskDialog.STRING, "");
+				String guid = guidDialog.getTextFieldValue().toUpperCase();
+				JPanel panel = new JPanel(new BorderLayout());
+				String readableName = guids.getReadableName(guid);
+				if (name == null) {
+					Msg.showInfo(getClass(), panel, "EFIdra GUIDs", "Couldn't find a readable name for " + guid);
+				} else {
+					Msg.showInfo(getClass(), panel, "EFIdra GUIDs", readableName + " (" + guid + ")");
+				}
+			})
+			.enabled(true)
+			.description("Convert a GUID to its readable name, if available")
+			.buildAndInstall(tool);
 	}
 	
 	@Override

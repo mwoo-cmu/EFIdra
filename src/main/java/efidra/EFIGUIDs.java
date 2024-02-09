@@ -10,8 +10,6 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.HexFormat;
 
-import org.postgresql.shaded.com.ongres.scram.common.bouncycastle.pbkdf2.Arrays;
-
 import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
 
@@ -25,16 +23,23 @@ public class EFIGUIDs {
 		// 16 bytes from 4 + 2 + 2 + 8
 		// bytes should be a byte array from ByteProvider.readBytes(idx, 16)
 		// can also be from BinaryReader.readByteArray or BinaryReader.readNextByteArray
-		HexFormat formatter = HexFormat.of();
-		return new StringBuilder(formatter.formatHex(Arrays.copyOfRange(bytes, 0, 4)))
+		HexFormat formatter = HexFormat.of().withUpperCase();
+		// necessary because GUIDs use little endian uint32_t and uint16_t
+		// sadly, this is the least disgusting way I could find to do this, which is wild.
+		int data1 = (bytes[0] & 0xff) + (0xff00 & (bytes[1] << 8)) + 
+				(0xff0000 & (bytes[2] << 16)) + (0xff000000 & (bytes[3] << 24));
+		short data2 = (short) ((bytes[4] & 0xff) + (0xff00 & (bytes[5] << 8)));
+		short data3 = (short) ((bytes[6] & 0xff) + (0xff00 & (bytes[7] << 8)));		
+		return new StringBuilder(
+				formatter.toHexDigits(data1))
 				.append("-")
-				.append(formatter.formatHex(Arrays.copyOfRange(bytes, 4, 6)))
+				.append(formatter.toHexDigits(data2))
 				.append("-")
-				.append(formatter.formatHex(Arrays.copyOfRange(bytes, 6, 8)))
+				.append(formatter.toHexDigits(data3))
 				.append("-")
-				.append(formatter.formatHex(Arrays.copyOfRange(bytes, 8, 10)))
+				.append(formatter.formatHex(bytes, 8, 10))
 				.append("-")
-				.append(formatter.formatHex(Arrays.copyOfRange(bytes, 10, 16))).toString();
+				.append(formatter.formatHex(bytes, 10, 16)).toString();
 	}
 	
 	public EFIGUIDs(boolean loadDefaults) {
