@@ -59,7 +59,11 @@ public class EFIGUIDs {
 	}
 	
 	public String getReadableName(String guid) {
-		return guids.get(guid);
+		String name = guids.get(guid);
+		if (name == null) {
+			return guid;
+		}
+		return name;
 	}
 	
 	public void clearGUIDs() {

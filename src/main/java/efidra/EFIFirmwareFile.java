@@ -124,4 +124,8 @@ public class EFIFirmwareFile {
 	public String getNameGUID() {
 		return name;
 	}
+	
+	public long getSize() {
+		return size == 0 ? extendedSize : (long) size;
+	}
 }

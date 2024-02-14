@@ -182,6 +182,10 @@ public class EFIFirmwareVolume {
 		return basePointer;
 	}
 	
+	public long getLength() {
+		return fvLength;
+	}
+	
 	public String getFileSystemGUID() {
 		return fileSystemGuid;
 	}

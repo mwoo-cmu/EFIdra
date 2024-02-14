@@ -144,7 +144,7 @@ public class efidraPlugin extends Plugin {
 				String guid = guidDialog.getTextFieldValue().toUpperCase();
 				JPanel panel = new JPanel(new BorderLayout());
 				String readableName = guids.getReadableName(guid);
-				if (name == null) {
+				if (name.equals(guid)) {
 					Msg.showInfo(getClass(), panel, "EFIdra GUIDs", "Couldn't find a readable name for " + guid);
 				} else {
 					Msg.showInfo(getClass(), panel, "EFIdra GUIDs", readableName + " (" + guid + ")");

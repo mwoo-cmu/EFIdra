@@ -37,11 +37,16 @@ import ghidra.program.model.lang.CompilerSpecDescription;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.lang.LanguageDescription;
 import ghidra.program.model.lang.Processor;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ProgramFragment;
+import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.NotFoundException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -93,6 +98,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 									compDesc.getCompilerSpecID()), false));
 				}
 			}
+//			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair()))
 		}
 //		}
 		
@@ -130,13 +136,14 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
 			Program program, TaskMonitor monitor, MessageLog log)
 			throws CancelledException, IOException {
-		// TODO: Load the bytes from 'provider' into the 'program'.
-		FlatProgramAPI programApi = new FlatProgramAPI(program, monitor);
 		Address progBase = program.getImageBase();
 		findFirmwareVolumes(provider);
 		Memory memory = program.getMemory();
+		
+		Listing listing = program.getListing();
+		ProgramModule rootModule = listing.getDefaultRootModule();
 		try {
-			memory.createInitializedBlock("Unpadded ROM", progBase.add(paddingOffset), 
+			memory.createInitializedBlock("Unpadded Full ROM", progBase.add(paddingOffset), 
 					provider.getInputStream(paddingOffset), provider.length() - paddingOffset,
 					monitor, false);
 		} catch (LockException e) {
@@ -160,30 +167,25 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		}
 		
 		// label all of the volumes we've found
+		EFIGUIDs guids = new EFIGUIDs();
 		for (EFIFirmwareVolume volume : volumes) {
 			try {
-				programApi.createLabel(progBase.add(volume.getBasePointer()), volume.getNameGUID(), true);
-			} catch (AddressOutOfBoundsException e) {
-				// TODO Auto-generated catch block
-				// error on progBase.add
-				e.printStackTrace();
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				// error on createLabel
-				e.printStackTrace();
-			}
-			for (EFIFirmwareFile file : volume.getFiles()) {
-				try {
-					programApi.createLabel(progBase.add(file.getBasePointer()), file.getNameGUID(), true);
-				} catch (AddressOutOfBoundsException e) {
-					// TODO Auto-generated catch block
-					// error on progBase.add
-					e.printStackTrace();
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
-					// error on createLabel
-					e.printStackTrace();
+				ProgramModule volumeModule = rootModule.createModule(
+						guids.getReadableName(
+								volume.getNameGUID()) + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+				for (EFIFirmwareFile file : volume.getFiles()) {
+					try {
+						String fileGUIDName = guids.getReadableName(file.getNameGUID());
+						ProgramFragment fileFrag = volumeModule.createFragment(fileGUIDName + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+						fileFrag.move(progBase.add(file.getBasePointer()), progBase.add(file.getBasePointer() + file.getSize()));
+					} catch (NotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
 				}
+			} catch (DuplicateNameException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
 		}
 	}
@@ -195,7 +197,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
 
 		// TODO: If this loader has custom options, add them to 'list'
-		list.add(new Option("Option name goes here", "Default option value goes here"));
+//		list.add(new Option("Convert GUIDs to Names", true));
 
 		return list;
 	}
