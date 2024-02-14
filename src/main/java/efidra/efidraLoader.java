@@ -173,11 +173,25 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 				ProgramModule volumeModule = rootModule.createModule(
 						guids.getReadableName(
 								volume.getNameGUID()) + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+				ProgramFragment headerFrag = volumeModule.createFragment(
+						"UEFI Volume Header (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+				try {
+					Address headerBase = progBase.add(volume.getBasePointer()); 
+					headerFrag.move(headerBase, headerBase.add(volume.getHeaderLength()));
+				} catch (NotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (AddressOutOfBoundsException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 				for (EFIFirmwareFile file : volume.getFiles()) {
 					try {
 						String fileGUIDName = guids.getReadableName(file.getNameGUID());
-						ProgramFragment fileFrag = volumeModule.createFragment(fileGUIDName + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
-						fileFrag.move(progBase.add(file.getBasePointer()), progBase.add(file.getBasePointer() + file.getSize()));
+						ProgramFragment fileFrag = volumeModule.createFragment(
+								fileGUIDName + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+						Address fileBase = progBase.add(file.getBasePointer()); 
+						fileFrag.move(fileBase, fileBase.add(file.getSize()));
 					} catch (NotFoundException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();

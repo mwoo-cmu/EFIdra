@@ -198,7 +198,7 @@ public class EFIFirmwareVolume {
 		return files;
 	}
 	
-//	public String getFileSystemGUIDName() {
-//		return 
-//	}
+	public long getHeaderLength() {
+		return headerLength;
+	}
 }

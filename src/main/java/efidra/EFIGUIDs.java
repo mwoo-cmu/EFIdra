@@ -17,6 +17,8 @@ import ghidra.util.Msg;
 
 public class EFIGUIDs {
 	public static final int EFI_GUID_LEN = 16;
+	public static final int EFI_GUID_DATA4_LEN = 8;
+	
 	private HashMap<String, String> guids;
 	
 	public static String bytesToGUIDString(byte[] bytes) {
