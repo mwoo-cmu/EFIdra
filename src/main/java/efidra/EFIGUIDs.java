@@ -19,7 +19,7 @@ public class EFIGUIDs {
 	public static final int EFI_GUID_LEN = 16;
 	public static final int EFI_GUID_DATA4_LEN = 8;
 	
-	private HashMap<String, String> guids;
+	private static HashMap<String, String> guids = new HashMap<>();
 	
 	public static String bytesToGUIDString(byte[] bytes) {
 		// 16 bytes from 4 + 2 + 2 + 8
@@ -45,7 +45,7 @@ public class EFIGUIDs {
 	}
 	
 	public EFIGUIDs(boolean loadDefaults) {
-		guids = new HashMap<>();
+//		guids = new HashMap<>();
 		if (loadDefaults) {
 			try {
 				parseGUIDsFromURL("https://fwupd.org/lvfs/shards/export/csv");

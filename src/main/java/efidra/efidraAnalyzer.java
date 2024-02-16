@@ -27,6 +27,7 @@ import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.options.Options;
+import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.ByteDataType;
@@ -37,6 +38,7 @@ import ghidra.program.model.data.QWordDataType;
 import ghidra.program.model.data.StringDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.WordDataType;
+import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Group;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -60,6 +62,16 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	private StructureDataType GUID_STRUCT;
 	private StructureDataType BLOCK_MAP_ENTRY_STRUCT;
 	private StructureDataType VOLUME_HEADER_STRUCT;
+	private StructureDataType EFI_FFS_INTEGRITY_CHECK;
+	private StructureDataType FILE_HEADER_STRUCT;
+	private StructureDataType FILE_HEADER2_STRUCT;
+	
+	public static final String LABEL_EFI_GUID = "EFI_GUID";
+	public static final String LABEL_EFI_FV_BLOCK_MAP_ENTRY = "EFI_FV_BLOCK_MAP_ENTRY";
+	public static final String LABEL_EFI_FIRMWARE_VOLUME_HEADER = "EFI_FIRMWARE_VOLUME_HEADER";
+	public static final String LABEL_EFI_FFS_INTEGRITY_CHECK = "EFI_FFS_INTEGRITY_CHECK";
+	public static final String LABEL_EFI_FFS_FILE_HEADER = "EFI_FFS_FILE_HEADER";
+	public static final String LABEL_EFI_FFS_FILE_HEADER2 = "EFI_FFS_FILE_HEADER2";
 
 	public efidraAnalyzer() {
 
@@ -67,20 +79,20 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 
 		super("EFIdra UEFI Analyzer", "Analyze a loaded UEFI ROM", AnalyzerType.BYTE_ANALYZER);
 		
-		GUID_STRUCT = new StructureDataType("EFI_GUID", 0);
+		GUID_STRUCT = new StructureDataType(LABEL_EFI_GUID, 0);
 		GUID_STRUCT.add(DWORD, "Data1", null);
 		GUID_STRUCT.add(WORD, "Data2", null);
 		GUID_STRUCT.add(WORD, "Data3", null);
 		GUID_STRUCT.add(new ArrayDataType(BYTE, EFIGUIDs.EFI_GUID_DATA4_LEN, 
 				BYTE.getLength()), "Data4", null);
 		
-		BLOCK_MAP_ENTRY_STRUCT = new StructureDataType("EFI_FV_BLOCK_MAP_ENTRY", 0);
+		BLOCK_MAP_ENTRY_STRUCT = new StructureDataType(LABEL_EFI_FV_BLOCK_MAP_ENTRY, 0);
 		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "NumBlocks", 
 				"The number of sequential blocks which are of the same size.");
 		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "Length",
 				"The size of the blocks.");
 		
-		VOLUME_HEADER_STRUCT = new StructureDataType("EFI_FIRMWARE_VOLUME_HEADER", 0);
+		VOLUME_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FIRMWARE_VOLUME_HEADER, 0);
 		VOLUME_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareVolume.ZERO_VECTOR_LEN, 
 				BYTE.getLength()), "ZeroVector", 
 				"The first 16 bytes are reserved to allow for the reset vector of\n"
@@ -108,6 +120,40 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		VOLUME_HEADER_STRUCT.add(BLOCK_MAP_ENTRY_STRUCT, "BlockMap",
 				"An array of run-length encoded FvBlockMapEntry structures. The array is\n"
 				+ "terminated with an entry of {0,0}.");
+		
+		EFI_FFS_INTEGRITY_CHECK = new StructureDataType(LABEL_EFI_FFS_INTEGRITY_CHECK, 0);
+		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "Header", "8-bit checksum of the file header");
+		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "File", "8-bit checksum of the file contents");
+		
+		FILE_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FFS_FILE_HEADER, 0);
+		FILE_HEADER_STRUCT.add(GUID_STRUCT, "Name", 
+				"This GUID is the file name. It is used to uniquely identify the file.");
+		FILE_HEADER_STRUCT.add(EFI_FFS_INTEGRITY_CHECK, "IntegrityCheck", 
+				"Used to verify the integrity of the file.");
+		FILE_HEADER_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
+		FILE_HEADER_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
+		FILE_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareFile.EFI_FF_SIZE_LEN, 
+				BYTE.getLength()), "Size", 
+				"The length of the file in bytes, including the FFS header.");
+		FILE_HEADER_STRUCT.add(BYTE, "State", 
+				"Used to track the state of the file throughout the life of the file from creation to deletion.");
+		
+//		FILE_HEADER2_STRUCT = FILE_HEADER_STRUCT.clone();
+		FILE_HEADER2_STRUCT = new StructureDataType(LABEL_EFI_FFS_FILE_HEADER2, 0);
+		FILE_HEADER2_STRUCT.add(GUID_STRUCT, "Name", 
+				"This GUID is the file name. It is used to uniquely identify the file.");
+		FILE_HEADER2_STRUCT.add(EFI_FFS_INTEGRITY_CHECK, "IntegrityCheck", 
+				"Used to verify the integrity of the file.");
+		FILE_HEADER2_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
+		FILE_HEADER2_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
+		FILE_HEADER2_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareFile.EFI_FF_SIZE_LEN, 
+				BYTE.getLength()), "Size", 
+				"The length of the file in bytes, including the FFS header.");
+		FILE_HEADER2_STRUCT.add(BYTE, "State", 
+				"Used to track the state of the file throughout the life of the file from creation to deletion.");
+		FILE_HEADER2_STRUCT.add(QWORD, "ExtendedSize", 
+				"If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\n"
+				+ "If FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.");
 	}
 
 	@Override
@@ -145,7 +191,31 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				if (programFragment.getName().contains("UEFI Volume Header")) {
 					// this is a header fragment
 					try {
-						listing.createData(programFragment.getMinAddress(), VOLUME_HEADER_STRUCT);
+						Address vhBase = programFragment.getMinAddress();
+						String checksum = listing.getComment(CodeUnit.PRE_COMMENT, vhBase);
+						listing.createData(vhBase, VOLUME_HEADER_STRUCT);
+						listing.setComment(vhBase.add(EFIFirmwareVolume.EFI_FV_CHECKSUM_OFFSET), 
+								CodeUnit.PRE_COMMENT, checksum);
+					} catch (CodeUnitInsertionException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				} else {
+					// non-header fragment should be a file 
+					// (we should set up something for non-uefi files and padding space, though)
+					try {
+						Address fhBase = programFragment.getMinAddress();
+						String checksum = listing.getComment(CodeUnit.PRE_COMMENT, fhBase);
+						String comment = programFragment.getComment();
+						if (LABEL_EFI_FFS_FILE_HEADER2.equals(comment)) {
+							listing.createData(fhBase, FILE_HEADER2_STRUCT);
+							programFragment.setComment("");
+						} else if (LABEL_EFI_FFS_FILE_HEADER.equals(comment)) {
+							listing.createData(fhBase, FILE_HEADER_STRUCT);
+							programFragment.setComment("");
+						}
+						listing.setComment(fhBase.add(EFIFirmwareFile.EFI_FF_CHECKSUM_OFFSET), 
+								CodeUnit.PRE_COMMENT, checksum);
 					} catch (CodeUnitInsertionException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();

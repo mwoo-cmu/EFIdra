@@ -37,6 +37,7 @@ import ghidra.program.model.lang.CompilerSpecDescription;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.lang.LanguageDescription;
 import ghidra.program.model.lang.Processor;
+import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
@@ -144,7 +145,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		ProgramModule rootModule = listing.getDefaultRootModule();
 		try {
 			memory.createInitializedBlock("Unpadded Full ROM", progBase.add(paddingOffset), 
-					provider.getInputStream(paddingOffset), provider.length() - paddingOffset,
+					provider.getInputStream(paddingOffset), provider.length() - paddingOffset + 1,
 					monitor, false);
 		} catch (LockException e) {
 			// TODO Auto-generated catch block
@@ -178,6 +179,8 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 				try {
 					Address headerBase = progBase.add(volume.getBasePointer()); 
 					headerFrag.move(headerBase, headerBase.add(volume.getHeaderLength()));
+					listing.setComment(headerBase, CodeUnit.PRE_COMMENT, 
+							volume.isChecksumValid() ? "Checksum Valid" : "Checksum Invalid");
 				} catch (NotFoundException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -189,9 +192,27 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 					try {
 						String fileGUIDName = guids.getReadableName(file.getNameGUID());
 						ProgramFragment fileFrag = volumeModule.createFragment(
-								fileGUIDName + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+								fileGUIDName + " (0x" + Long.toHexString(file.getBasePointer()) + ")");
 						Address fileBase = progBase.add(file.getBasePointer()); 
-						fileFrag.move(fileBase, fileBase.add(file.getSize()));
+						if (file.isChecksumValid()) {
+							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Checksum Valid");
+						} else if (file.isHeaderChecksumValid()) {
+							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Header Checksum Valid, File Checksum Invalid");
+						} else if (file.isFileChecksumValid()) {
+							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Header Checksum Invalid, File Checksum Valid");
+						} else {
+							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Both Header and File Checksum Invalid");
+						}
+						try {
+							fileFrag.move(fileBase, fileBase.add(file.getSize()));
+							if (file.isHeader2()) {
+								fileFrag.setComment(efidraAnalyzer.LABEL_EFI_FFS_FILE_HEADER2);
+							} else {
+								fileFrag.setComment(efidraAnalyzer.LABEL_EFI_FFS_FILE_HEADER);							
+							}
+						} catch (AddressOutOfBoundsException e) {
+							e.printStackTrace();
+						}
 					} catch (NotFoundException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();

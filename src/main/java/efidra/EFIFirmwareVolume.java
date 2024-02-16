@@ -28,10 +28,13 @@ public class EFIFirmwareVolume {
 	
 	public static final int ZERO_VECTOR_LEN = 16;
 	// from zeroVector + fileSystemGuid + fvLength
-	public static final int EFI_SIG_OFFSET = 16 + 16 + 8;
+	public static final int EFI_SIG_OFFSET = ZERO_VECTOR_LEN + EFIGUIDs.EFI_GUID_LEN + 8;
+	public static final int EFI_FV_CHECKSUM_OFFSET = EFI_SIG_OFFSET + 4 + 4 + 2;
 	private static final int EFI_FV_OFFSET = 8;
 	
 	private static byte[] FREE_SPACE_HEADER = new byte[EFIFirmwareFile.EFI_FF_HEADER_LEN];
+	
+	private static final int EFI_FVB2_ALIGNMENT = 0x001F0000; // refers to 2GB alignment
 	
 	/* from https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Pi/PiFirmwareVolume.h
 	 * /// Describes the features and layout of the firmware volume.
@@ -90,6 +93,7 @@ public class EFIFirmwareVolume {
 	
 	private boolean checksumValid;
 	private long basePointer;
+	private int alignment;
 	
 	private List<EFIFirmwareFile> files;
 	
@@ -115,6 +119,9 @@ public class EFIFirmwareVolume {
 		} else {
 			reader.setPointerIndex(basePointer + headerLength);
 		}
+		
+//		int alignAttribute = (attributes & EFI_FVB2_ALIGNMENT) >> 4;
+//		alignment = 1 << alignAttribute;
 	}
 	
 	private void readBlockMap(BinaryReader reader, long headerEnd) throws IOException {
@@ -133,11 +140,27 @@ public class EFIFirmwareVolume {
 		reader.align(EFI_FV_OFFSET);
 		while (curIdx < fvEnd) {
 			if (Arrays.equals(reader.readByteArray(curIdx, EFIFirmwareFile.EFI_FF_HEADER_LEN), FREE_SPACE_HEADER)) {
-				// free space, skip to end 
+				// free space, skip until end
+//				reader.setPointerIndex(fvEnd);
+				while (curIdx < fvEnd) {
+					int nextInt = reader.readNextInt();
+					if (nextInt != 0xffffffff) {
+						reader.setPointerIndex(reader.getPointerIndex() - 4);
+						break;
+					}
+					curIdx = reader.getPointerIndex();
+				}
+				if (curIdx >= fvEnd) {
+					break;
+				}
+			}
+			try {
+				files.add(new EFIFirmwareFile(reader));
+			} catch (IOException e) {
+				// what should we do if there's a corrupt/non-UEFI file?
 				reader.setPointerIndex(fvEnd);
 				break;
 			}
-			files.add(new EFIFirmwareFile(reader));
 			reader.align(EFI_FV_OFFSET);
 			curIdx = reader.getPointerIndex();
 		}
@@ -200,5 +223,9 @@ public class EFIFirmwareVolume {
 	
 	public long getHeaderLength() {
 		return headerLength;
+	}
+	
+	public boolean isChecksumValid() {
+		return checksumValid;
 	}
 }

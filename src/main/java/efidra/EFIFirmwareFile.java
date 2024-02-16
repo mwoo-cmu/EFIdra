@@ -6,10 +6,11 @@ import java.util.Arrays;
 import ghidra.app.util.bin.BinaryReader;
 
 public class EFIFirmwareFile {
-	private static final int EFI_FF_SIZE_LEN = 3;
+	public static final int EFI_FF_SIZE_LEN = 3;
 	private static final int EFI_FF_INTEGRITYCHECK_LEN = 2;
 	public static final int EFI_FF_HEADER_LEN = 24;
 	private static final int EFI_FF_HEADER_EXT_LEN = EFI_FF_HEADER_LEN + 8;
+	public static final int EFI_FF_CHECKSUM_OFFSET = EFIGUIDs.EFI_GUID_LEN;
 	
 	private static final byte FFS_ATTRIB_LARGE_FILE = 0x01;
 	private static final byte FFS_ATTRIB_DATA_ALIGNMENT_2 = 0x02;
@@ -53,7 +54,8 @@ public class EFIFirmwareFile {
 	private byte state;
 	private long extendedSize;
 	
-	private boolean checksumValid;
+	private boolean headerChecksumValid;
+	private boolean fileChecksumValid;
 	private long basePointer;
 	private int headerSize;
 	private byte[] fileData;
@@ -68,15 +70,6 @@ public class EFIFirmwareFile {
 			headerSize = EFI_FF_HEADER_LEN;
 		}
 		
-		if ((attributes & FFS_ATTRIB_CHECKSUM) != 0) {
-			// integrityCheck[1] is the 8-bit checksum of the file itself
-		} else {
-			// if the attribute is not set, it should be 0xaa
-			if (integrityCheck[1] != 0xaa) {
-				checksumValid = false;
-			}
-		}
-		
 		reader.setPointerIndex(basePointer);
 		// header sum should be 0, but need to adjust for state and file fields
 		int headerSum = 0;
@@ -85,9 +78,24 @@ public class EFIFirmwareFile {
 		}
 		headerSum -= state;
 		headerSum -= integrityCheck[1];
-		checksumValid &= (headerSum & 0xff) == 0;
+		headerChecksumValid = (headerSum & 0xff) == 0;
 		
 		reader.setPointerIndex(basePointer + headerSize);
+	}
+	
+	private void checkFileChecksum() {
+		if ((attributes & FFS_ATTRIB_CHECKSUM) != 0) {
+			// integrityCheck[1] is the 8-bit checksum of the file itself
+			// file checksum must be done after loading the file bytes into fileData
+			int fileSum = 0;
+			for (int i = 0; i < fileData.length; i++) {
+				fileSum += fileData[i];
+			}
+			fileChecksumValid = (0x100 - (fileSum & 0xff)) == integrityCheck[1];
+		} else {
+			// if the attribute is not set, file checksum should be 0xaa
+			fileChecksumValid = integrityCheck[1] == (byte) 0xaa; 
+		}
 	}
 	
 	public EFIFirmwareFile(BinaryReader reader) throws IOException {
@@ -108,13 +116,15 @@ public class EFIFirmwareFile {
 		parseHeader(reader);
 		
 		int dataLen = 0;
-		if (extendedSize > 0) {
+		if (isHeader2()) {
 			dataLen = (int) (extendedSize - EFI_FF_HEADER_EXT_LEN);
-		} else if (size > 0) {
+		} else {
 			dataLen = size - EFI_FF_HEADER_LEN;
 		}
-		
-		fileData = reader.readNextByteArray(dataLen);
+		if (dataLen > 0) {
+			fileData = reader.readNextByteArray(dataLen);
+			checkFileChecksum();
+		}
 	}
 	
 	public long getBasePointer() {
@@ -126,6 +136,26 @@ public class EFIFirmwareFile {
 	}
 	
 	public long getSize() {
-		return size == 0 ? extendedSize : (long) size;
+		long sizeField = isHeader2() ? extendedSize : (long) size;
+		if (sizeField < 0) {
+			return 0;
+		}
+		return sizeField;
+	}
+	
+	public boolean isHeader2() {
+		return (attributes & FFS_ATTRIB_LARGE_FILE) != 0;
+	}
+	
+	public boolean isChecksumValid() {
+		return headerChecksumValid && fileChecksumValid;
+	}
+	
+	public boolean isHeaderChecksumValid() {
+		return headerChecksumValid;
+	}
+	
+	public boolean isFileChecksumValid() {
+		return fileChecksumValid;
 	}
 }
