@@ -55,8 +55,6 @@ import ghidra.util.task.TaskMonitor;
  */
 public class efidraLoader extends AbstractProgramWrapperLoader {
 
-	// "_FVH" stored little endian
-	private static final int EFI_FVH_SIGNATURE = 0x4856465f;
 	private List<EFIFirmwareVolume> volumes;
 	private long paddingOffset;
 	
@@ -122,7 +120,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 				// need to offset by the int read and the size of the zero vector
 				paddingOffset = reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.ZERO_VECTOR_LEN;
 			}
-			if (next == EFI_FVH_SIGNATURE) {
+			if (next == EFIFirmwareVolume.EFI_FVH_SIGNATURE) {
 				reader.setPointerIndex(reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.EFI_SIG_OFFSET);
 				// after this call, reader will be pointed at the end of the 
 				// last firmware volume, so next header will be the next fv

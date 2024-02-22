@@ -25,6 +25,8 @@ import com.opencsv.exceptions.CsvValidationException;
 
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
+import ghidra.app.util.bin.BinaryReader;
+import ghidra.app.util.bin.MemoryByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
@@ -45,6 +47,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
@@ -72,6 +75,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	public static final String LABEL_EFI_FFS_INTEGRITY_CHECK = "EFI_FFS_INTEGRITY_CHECK";
 	public static final String LABEL_EFI_FFS_FILE_HEADER = "EFI_FFS_FILE_HEADER";
 	public static final String LABEL_EFI_FFS_FILE_HEADER2 = "EFI_FFS_FILE_HEADER2";
+	
+	public static final String NVRAM_GUID = "CEF5B9A3-476D-497F-9FDC-E98143E0422C";
 
 	public efidraAnalyzer() {
 
@@ -184,38 +189,68 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 //			"Option description goes here");
 	}
 
-	private void addStructuresRecursive(ProgramModule module, Listing listing) {
+	private void applyFileOrVolumeHeader(ProgramFragment programFragment, Listing listing) {
+		if (programFragment.getName().startsWith("UEFI Volume Header")) {
+			// this is a header fragment
+			try {
+				Address vhBase = programFragment.getMinAddress();
+				String checksum = listing.getComment(CodeUnit.PRE_COMMENT, vhBase);
+				listing.createData(vhBase, VOLUME_HEADER_STRUCT);
+				listing.setComment(vhBase.add(EFIFirmwareVolume.EFI_FV_CHECKSUM_OFFSET), 
+						CodeUnit.PRE_COMMENT, checksum);
+			} catch (CodeUnitInsertionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else {
+			// non-header fragment should be a file 
+			// (we should set up something for non-uefi files and padding space, though)
+			try {
+				Address fhBase = programFragment.getMinAddress();
+				String checksum = listing.getComment(CodeUnit.PRE_COMMENT, fhBase);
+				String comment = programFragment.getComment();
+				if (LABEL_EFI_FFS_FILE_HEADER2.equals(comment)) {
+					listing.createData(fhBase, FILE_HEADER2_STRUCT);
+					programFragment.setComment("");
+				} else if (LABEL_EFI_FFS_FILE_HEADER.equals(comment)) {
+					listing.createData(fhBase, FILE_HEADER_STRUCT);
+					programFragment.setComment("");
+				}
+				listing.setComment(fhBase.add(EFIFirmwareFile.EFI_FF_CHECKSUM_OFFSET), 
+						CodeUnit.PRE_COMMENT, checksum);
+			} catch (CodeUnitInsertionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	private void parseNVRAMStructures(ProgramFragment programFragment, Listing listing, Memory memory) throws IOException, CodeUnitInsertionException {
+		Address fragBase = programFragment.getMinAddress();
+		BinaryReader fragReader = new BinaryReader(
+				new MemoryByteProvider(memory, fragBase), true);
+		// ensure that the first 4 bytes are the "NVAR" signature
+		if (fragReader.peekNextInt() != EFINVAREntry.EFI_NVAR_SIGNATURE) {
+			return;
+		}
+		
+		// set up first "NVAR" string
+		listing.createData(fragBase, StringDataType.dataType, 4);
+	}
+	
+	private void addStructuresRecursive(ProgramModule module, Listing listing, Memory memory) {
 		for (Group programItem : module.getChildren()) {
 			if (programItem instanceof ProgramFragment) {
 				ProgramFragment programFragment = (ProgramFragment) programItem;
-				if (programFragment.getName().contains("UEFI Volume Header")) {
-					// this is a header fragment
+//				MemoryBlock fragBlock = memory.getBlock(programFragment.getMinAddress());
+				applyFileOrVolumeHeader(programFragment, listing);
+				if (programFragment.getName().startsWith("NVRAM") || 
+						programFragment.getName().startsWith(NVRAM_GUID)) {
 					try {
-						Address vhBase = programFragment.getMinAddress();
-						String checksum = listing.getComment(CodeUnit.PRE_COMMENT, vhBase);
-						listing.createData(vhBase, VOLUME_HEADER_STRUCT);
-						listing.setComment(vhBase.add(EFIFirmwareVolume.EFI_FV_CHECKSUM_OFFSET), 
-								CodeUnit.PRE_COMMENT, checksum);
-					} catch (CodeUnitInsertionException e) {
+						parseNVRAMStructures(programFragment, listing, memory);
+					} catch (IOException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
-					}
-				} else {
-					// non-header fragment should be a file 
-					// (we should set up something for non-uefi files and padding space, though)
-					try {
-						Address fhBase = programFragment.getMinAddress();
-						String checksum = listing.getComment(CodeUnit.PRE_COMMENT, fhBase);
-						String comment = programFragment.getComment();
-						if (LABEL_EFI_FFS_FILE_HEADER2.equals(comment)) {
-							listing.createData(fhBase, FILE_HEADER2_STRUCT);
-							programFragment.setComment("");
-						} else if (LABEL_EFI_FFS_FILE_HEADER.equals(comment)) {
-							listing.createData(fhBase, FILE_HEADER_STRUCT);
-							programFragment.setComment("");
-						}
-						listing.setComment(fhBase.add(EFIFirmwareFile.EFI_FF_CHECKSUM_OFFSET), 
-								CodeUnit.PRE_COMMENT, checksum);
 					} catch (CodeUnitInsertionException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -223,7 +258,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				}
 			} else if (programItem instanceof ProgramModule) {
 				ProgramModule programModule = (ProgramModule) programItem;
-				addStructuresRecursive(programModule, listing);
+				addStructuresRecursive(programModule, listing, memory);
 			}
 		}
 	}
@@ -237,11 +272,12 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
+		Memory memory = program.getMemory();
 		
 		// create data objects for the headers of files and volumes
-		addStructuresRecursive(rootModule, listing);
+		addStructuresRecursive(rootModule, listing, memory);
 		
 		
-		return false;
+		return true;
 	}
 }

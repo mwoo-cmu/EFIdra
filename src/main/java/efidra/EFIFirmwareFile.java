@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.util.Arrays;
 
 import ghidra.app.util.bin.BinaryReader;
+import ghidra.app.util.bin.MemoryByteProvider;
+import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.listing.ProgramFragment;
+import ghidra.program.model.mem.Memory;
 
 public class EFIFirmwareFile {
 	public static final int EFI_FF_SIZE_LEN = 3;
@@ -17,6 +21,35 @@ public class EFIFirmwareFile {
 	private static final byte FFS_ATTRIB_FIXED = 0x04;
 	private static final byte FFS_ATTRIB_DATA_ALIGNMENT = 0x38;
 	private static final byte FFS_ATTRIB_CHECKSUM = 0x40;
+	
+	// FILE TYPE DEFINITIONS 
+	// from https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Pi/PiFirmwareFile.h
+	public static final byte EFI_FV_FILETYPE_ALL = 0x00;
+	public static final byte EFI_FV_FILETYPE_RAW = 0x01;
+	public static final byte EFI_FV_FILETYPE_FREEFORM = 0x02;
+	public static final byte EFI_FV_FILETYPE_SECURITY_CORE = 0x03;
+	public static final byte EFI_FV_FILETYPE_PEI_CORE = 0x04;
+	public static final byte EFI_FV_FILETYPE_DXE_CORE = 0x05;
+	public static final byte EFI_FV_FILETYPE_PEIM = 0x06;
+	public static final byte EFI_FV_FILETYPE_DRIVER = 0x07;
+	public static final byte EFI_FV_FILETYPE_COMBINED_PEIM_DRIVER = 0x08;
+	public static final byte EFI_FV_FILETYPE_APPLICATION = 0x09;
+	public static final byte EFI_FV_FILETYPE_MM = 0x0A;
+	public static final byte EFI_FV_FILETYPE_SMM = EFI_FV_FILETYPE_MM;
+	public static final byte EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE = 0x0B;
+	public static final byte EFI_FV_FILETYPE_COMBINED_MM_DXE = 0x0C;
+	public static final byte EFI_FV_FILETYPE_COMBINED_SMM_DXE = EFI_FV_FILETYPE_COMBINED_MM_DXE;
+	public static final byte EFI_FV_FILETYPE_MM_CORE = 0x0D;
+	public static final byte EFI_FV_FILETYPE_SMM_CORE = EFI_FV_FILETYPE_MM_CORE;
+	public static final byte EFI_FV_FILETYPE_MM_STANDALONE = 0x0E;
+	public static final byte EFI_FV_FILETYPE_MM_CORE_STANDALONE = 0x0F;
+	public static final byte EFI_FV_FILETYPE_OEM_MIN = (byte) 0xc0;
+	public static final byte EFI_FV_FILETYPE_OEM_MAX = (byte) 0xdf;
+	public static final byte EFI_FV_FILETYPE_DEBUG_MIN = (byte) 0xe0;
+	public static final byte EFI_FV_FILETYPE_DEBUG_MAX = (byte) 0xef;
+	public static final byte EFI_FV_FILETYPE_FFS_MIN = (byte) 0xf0;
+	public static final byte EFI_FV_FILETYPE_FFS_MAX = (byte) 0xff;
+	public static final byte EFI_FV_FILETYPE_FFS_PAD = (byte) 0xf0;
 	
 	/*
 	 * /// Each file begins with the header that describe the
@@ -127,6 +160,13 @@ public class EFIFirmwareFile {
 		}
 	}
 	
+	public EFIFirmwareFile(Memory memory, ProgramFragment fragment) throws IOException {
+		// A program fragment that represents a UEFI file should have only one 
+		// address space starting at the base of the file.
+		this(new BinaryReader(new MemoryByteProvider(
+				memory, fragment.getFirstRange().getAddressSpace()), true));
+	}
+	
 	public long getBasePointer() {
 		return basePointer;
 	}
@@ -157,5 +197,9 @@ public class EFIFirmwareFile {
 	
 	public boolean isFileChecksumValid() {
 		return fileChecksumValid;
+	}
+	
+	public byte getType() {
+		return type;
 	}
 }

@@ -26,6 +26,9 @@ public class EFIFirmwareVolume {
 		}
 	}
 	
+	// "_FVH" stored little endian
+	public static final int EFI_FVH_SIGNATURE = 0x4856465f;
+	
 	public static final int ZERO_VECTOR_LEN = 16;
 	// from zeroVector + fileSystemGuid + fvLength
 	public static final int EFI_SIG_OFFSET = ZERO_VECTOR_LEN + EFIGUIDs.EFI_GUID_LEN + 8;
