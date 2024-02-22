@@ -27,6 +27,7 @@ import docking.ActionContext;
 import docking.action.builder.ActionBuilder;
 import docking.tool.ToolConstants;
 import docking.widgets.filechooser.GhidraFileChooser;
+import docking.widgets.filechooser.GhidraFileChooserMode;
 import docking.ComponentProvider;
 import docking.action.DockingAction;
 import docking.action.ToolBarData;
@@ -140,11 +141,11 @@ public class efidraPlugin extends Plugin {
 			.menuPath("&EFIdra", "GUID Database", "Convert GUID")
 			.menuIcon(null)
 			.onAction(c -> {
-				AskDialog guidDialog = new AskDialog("Load GUID Database", "URL", AskDialog.STRING, "");
+				AskDialog guidDialog = new AskDialog("Find GUID Readable Name", "GUID", AskDialog.STRING, "");
 				String guid = guidDialog.getTextFieldValue().toUpperCase();
 				JPanel panel = new JPanel(new BorderLayout());
 				String readableName = guids.getReadableName(guid);
-				if (name.equals(guid)) {
+				if (readableName.equals(guid)) {
 					Msg.showInfo(getClass(), panel, "EFIdra GUIDs", "Couldn't find a readable name for " + guid);
 				} else {
 					Msg.showInfo(getClass(), panel, "EFIdra GUIDs", readableName + " (" + guid + ")");
@@ -153,6 +154,19 @@ public class efidraPlugin extends Plugin {
 			.enabled(true)
 			.description("Convert a GUID to its readable name, if available")
 			.buildAndInstall(tool);
+		// non-zip export of executables
+//		new ActionBuilder("Export Executables to Directory", getName())
+//			.menuPath("&EFIdra", "Export Executables to Directory")
+//			.menuIcon(null)
+//			.onAction(c -> {
+//				GhidraFileChooser fileChooser = new GhidraFileChooser(null);
+//				fileChooser.setFileSelectionMode(GhidraFileChooserMode.DIRECTORIES_ONLY);
+//				File file = fileChooser.getSelectedFile();
+//				
+//			})
+//			.enabled(true)
+//			.description("Export all executables in this ROM to a given Directory")
+//			.buildAndInstall(tool);
 	}
 	
 	@Override
