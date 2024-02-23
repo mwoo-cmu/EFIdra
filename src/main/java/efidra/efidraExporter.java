@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -50,7 +51,7 @@ public class efidraExporter extends Exporter {
 			EFIFirmwareSection.EFI_SECTION_TE
 	});
 	
-	private static Address programBase;
+//	private static Address programBase;
 	
 	/**
 	 * Exporter constructor.
@@ -78,7 +79,7 @@ public class efidraExporter extends Exporter {
 		if (zipOs == null && outputDir == null)
 			throw new IllegalArgumentException("No output specified.");
 		for (Group programItem : module.getChildren()) {
-			if (programItem instanceof ProgramFragment) {
+			if (programItem instanceof ProgramFragment && !programItem.getName().startsWith("UEFI Volume Header")) {
 				try {
 					ProgramFragment programFragment = (ProgramFragment) programItem;
 					EFIFirmwareFile efiFile = new EFIFirmwareFile(memory, programFragment);
@@ -87,9 +88,13 @@ public class efidraExporter extends Exporter {
 							StringBuilder sb = new StringBuilder();
 							for (String parent : programItem.getParentNames()) {
 								// pull the name/GUID without the unique address
-								sb.append(parent.split(" (0x")[0] + "/");
+								sb.append(parent.split(Pattern.quote(" (0x"))[0] + "/");
 							}
-							sb.append(programItem.getName().split(" (0x")[0]);
+							if (outputDir != null) {
+								File dir = new File(outputDir, sb.toString());
+								dir.mkdirs();
+							}
+							sb.append(programItem.getName().split(Pattern.quote(" (0x"))[0]);
 							if (section.getType() == EFIFirmwareSection.EFI_SECTION_PE32) {
 								sb.append("_PE32_Section");
 							} else if (section.getType() == EFIFirmwareSection.EFI_SECTION_TE) {
@@ -97,12 +102,13 @@ public class efidraExporter extends Exporter {
 							}
 							sb.append(".efi");
 							Msg.info(null, sb.toString());
-							Address sectionBase = programBase.add(section.getBasePointer());
+//							Address sectionBase = programBase.add(section.getBasePointer());
 							// again, here we assume that the program fragment 
 							// representing a valid EFI Firmware File is the first 
 							// address range in its program fragment
-							byte[] sectionBytes = new byte[section.getSize()];
-							memory.getBytes(sectionBase, sectionBytes);
+//							byte[] sectionBytes = new byte[section.getSize()];
+							byte[] sectionBytes = section.getSectionData();
+//							memory.getBytes(sectionBase, sectionBytes);
 							if (zipOs != null) {
 								ZipEntry entry = new ZipEntry(sb.toString());
 								zipOs.putNextEntry(entry);
@@ -118,9 +124,6 @@ public class efidraExporter extends Exporter {
 						}
 					}
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (MemoryAccessException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
@@ -154,7 +157,7 @@ public class efidraExporter extends Exporter {
 		// the addrSet will be null if no section is highlighted when export is selected
 		
 		Program program = (Program) domainObj;
-		programBase = program.getImageBase();
+//		programBase = program.getImageBase();
 		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
