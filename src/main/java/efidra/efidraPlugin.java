@@ -18,6 +18,8 @@ package efidra;
 import java.awt.BorderLayout;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 
 import javax.swing.*;
 
@@ -32,10 +34,15 @@ import docking.ComponentProvider;
 import docking.action.DockingAction;
 import docking.action.ToolBarData;
 import ghidra.app.ExamplesPluginPackage;
+import ghidra.app.context.ProgramActionContext;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
 import ghidra.framework.plugintool.*;
 import ghidra.framework.plugintool.util.PluginStatus;
+import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ProgramModule;
+import ghidra.program.model.mem.Memory;
 import ghidra.util.HelpLocation;
 import ghidra.util.Msg;
 import ghidra.app.script.AskDialog;
@@ -155,18 +162,31 @@ public class efidraPlugin extends Plugin {
 			.description("Convert a GUID to its readable name, if available")
 			.buildAndInstall(tool);
 		// non-zip export of executables
-//		new ActionBuilder("Export Executables to Directory", getName())
-//			.menuPath("&EFIdra", "Export Executables to Directory")
-//			.menuIcon(null)
-//			.onAction(c -> {
-//				GhidraFileChooser fileChooser = new GhidraFileChooser(null);
-//				fileChooser.setFileSelectionMode(GhidraFileChooserMode.DIRECTORIES_ONLY);
-//				File file = fileChooser.getSelectedFile();
-//				
-//			})
-//			.enabled(true)
-//			.description("Export all executables in this ROM to a given Directory")
-//			.buildAndInstall(tool);
+		new ActionBuilder("Export Executables to Directory", getName())
+			.menuPath("&EFIdra", "Export Executables to Directory")
+			.menuIcon(null)
+			.onAction(c -> {
+				GhidraFileChooser fileChooser = new GhidraFileChooser(null);
+				fileChooser.setFileSelectionMode(GhidraFileChooserMode.DIRECTORIES_ONLY);
+				File file = fileChooser.getSelectedFile();
+				JPanel panel = new JPanel(new BorderLayout());
+				// when run in the Code Browser, c should be a 
+				// ProgramActionContext, so we can get the relevant program data.
+				if (!(c instanceof ProgramActionContext)) {
+					Msg.showError(null, panel, "Export Executables to Directory", 
+							"Error exporting executables: Current Context is not a Program Context");
+					return;
+				}
+				ProgramActionContext programContext = (ProgramActionContext) c;
+				Program program = programContext.getProgram();
+				Memory memory = program.getMemory();
+				Listing listing = program.getListing();
+				ProgramModule rootModule = listing.getDefaultRootModule();
+				efidraExporter.addFilesByTypeRecursive(rootModule, efidraExporter.PE_SECTION_TYPES, memory, listing, file);
+			})
+			.enabled(true)
+			.description("Export all executables in this ROM to a given Directory")
+			.buildAndInstall(tool);
 	}
 	
 	@Override
