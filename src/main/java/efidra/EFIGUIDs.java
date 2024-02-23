@@ -13,6 +13,7 @@ import java.util.HexFormat;
 import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
 
+import ghidra.framework.Application;
 import ghidra.util.Msg;
 
 public class EFIGUIDs {
@@ -48,7 +49,8 @@ public class EFIGUIDs {
 //		guids = new HashMap<>();
 		if (loadDefaults) {
 			try {
-				parseGUIDsFromURL("https://fwupd.org/lvfs/shards/export/csv");
+//				parseGUIDsFromURL("https://fwupd.org/lvfs/shards/export/csv");
+				parseGUIDsFromFile(Application.getModuleDataFile("guids.csv").getFile(true));
 			} catch (CsvValidationException | IOException e) {
 				Msg.showError(e, null, "GUIDs Error", "Error loading default GUIDs");
 				e.printStackTrace();

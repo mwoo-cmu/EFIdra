@@ -107,8 +107,6 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 	private void findFirmwareVolumes(ByteProvider provider) throws IOException {
 		// all UEFI images are little endian
 		BinaryReader reader = new BinaryReader(provider, true);
-		// do I need to set ptr index?
-//		reader.setPointerIndex(0);
 		long fileLen = provider.length();
 		long curIdx = 0;
 		volumes = new ArrayList<>();
@@ -128,7 +126,8 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			}
 			curIdx = reader.getPointerIndex();
 		}
-//		return volumes;
+		// in case malformed volumes have read too far
+		reader.setPointerIndex(fileLen);
 	}
 	
 	@Override
