@@ -16,13 +16,19 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
 import ghidra.framework.Application;
+import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.BuiltInDataTypeManager;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.Undefined;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
 public class EFIdraROMFormatLoader {
 	private static final String EFI_ROM_FORMATS_DIR = "rom_formats";
+	private static final char ARRAY_OPEN = '[';
+	private static final char ARRAY_CLOSE = ']';
 	
 	private static File formatsDir;
 	public static HashMap<String, DataType> dataTypes;
@@ -55,7 +61,47 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
+	private static DataType parseArrayRecursive(String type) {
+		if (type.charAt(type.length() - 1) == ARRAY_CLOSE) {
+			int arrayIdx = type.lastIndexOf(ARRAY_OPEN);
+			String subtype = type.substring(0, arrayIdx);
+			// strip off the brackets and convert to int
+			int length = Integer.parseInt(type.substring(arrayIdx + 1, type.length() - 1));
+			DataType dType = parseArrayRecursive(subtype);
+			return new ArrayDataType(dType, length, dType.getLength());
+		}
+		return dataTypes.get(type);
+	}
+	
+	public static DataType parseDataType(String name, JSONArray members, DataTypeManager dtm) {
+		StructureDataType sdt = new StructureDataType(name, 0, dtm);
+		for (Object memberObj : members) {
+			JSONObject member = (JSONObject) memberObj;
+			String type = (String) member.get("type");
+			Long sizeField = (Long) member.get("size");
+			int size = 0;
+			if (sizeField != null)
+				size = sizeField.intValue();
+			// fallback in case the type queried is null or not in the HashMap
+			DataType dType = Undefined.getUndefinedDataType(size);
+			if (type != null) {
+				// if non-array, will return dataTypes.get(type)
+				DataType loadedDataType = parseArrayRecursive(type);
+				if (loadedDataType != null) {
+					dType = loadedDataType;
+				}
+			}
+			sdt.add(dType, size, (String) member.get("name"), (String) member.get("comment"));	
+		}
+		return sdt;
+	}
+	
+	public static DataType parseDataType(String name, JSONArray members) {
+		return parseDataType(name, members, null);
+	}
+	
 	public static void loadROMFormats(Program program) {
+		DataTypeManager dtm = program.getDataTypeManager();
 		for (File file : formatsDir.listFiles()) {
 			if (file.isFile()) {
 				try {
@@ -70,7 +116,7 @@ public class EFIdraROMFormatLoader {
 								Msg.info(null, "Duplicate structure name " + name
 										+ ". Second occurrence in " + file.getName());
 							}
-							dataTypes.put(name, null);
+							dataTypes.put(name, parseDataType(name, members, dtm));
 						}
 					} else {
 						Msg.info(null, "No structures found in " + file.getName());
@@ -90,5 +136,9 @@ public class EFIdraROMFormatLoader {
 				}
 			}
 		}
+	}
+	
+	public static DataType getType(String typeName) {
+		return dataTypes.get(typeName);
 	}
 }

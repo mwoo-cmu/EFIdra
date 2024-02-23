@@ -18,8 +18,7 @@
 					"name": "Data3"
 				},
 				{
-					"type": "byte[]",
-					"size": 8,
+					"type": "byte[8]",
 					"name": "Data4"
 				}
 			]
@@ -43,8 +42,7 @@
 			"name": "EFI_FIRMWARE_VOLUME_HEADER",
 			"members": [
 				{
-					"type": "byte[]",
-					"size": 16,
+					"type": "byte[16]",
 					"name": "ZeroVector",
 					"comment": "The first 16 bytes are reserved to allow for the reset vector of\nprocessors whose reset vector is at address 0."
 				},
@@ -95,12 +93,28 @@
 					"comment": "Set to 2. Future versions of this specification may define new header fields and will\nincrement the Revision field accordingly."
 				},
 				{
-					"type": "EFI_FV_BLOCK_MAP_ENTRY",
+					"type": "EFI_FV_BLOCK_MAP_ENTRY[1]",
 					"name": "BlockMap",
 					"comment": "An array of run-length encoded FvBlockMapEntry structures. The array is\nterminated with an entry of {0,0}."
 				}
 			]
 		},
+		{
+			"name": "EFI_FIRMWARE_VOLUME_EXT_HEADER",
+			"members": [
+				{
+					"type": "EFI_GUID",
+					"name": "FvName",
+					"comment": "Firmware volume name."
+				},
+				{
+					"type": "dword",
+					"name": "ExtHeaderSize",
+					"comment": "Size of the rest of the extension header, including this structure."
+				}
+			]
+		},
+
 		{
 			"name": "EFI_FFS_INTEGRITY_CHECK",
 			"members": [
@@ -148,16 +162,91 @@
 					"type": "byte",
 					"name": "State",
 					"comment": "Used to track the state of the file throughout the life of the file from creation to deletion."
+				}
+			]
+		},
+		{
+			"name": "EFI_FFS_FILE_HEADER2",
+			"members": [
+				{
+					"type": "EFI_FFS_FILE_HEADER",
+					"name": "Header",
+					"comment": "In edk2, this is defined as a separate structure with the same fields. Here a nested structure is used for simplicity."
 				},
 				{
 					"type": "qword",
 					"name": "ExtendedSize",
-					"comment": "If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\nIf FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.",
-					"conditional": {
-						"field": "Attributes",
-						"operator": "",
-						"value": 1
-					}
+					"comment": "If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\nIf FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used."
+				}
+			]
+		},
+		{
+			"name": "EFI_COMMON_SECTION_HEADER",
+			"members": [
+				{
+					"type": "int3",
+					"name": "Size",
+					"comment": "A 24-bit unsigned integer that contains the total size of the section in bytes,\nincluding the EFI_COMMON_SECTION_HEADER."
+				},
+				{
+					"type": "byte",
+					"name": "Type",
+					"comment": "Declares the section type."
+				}
+			]
+		},
+		{
+			"name": "EFI_COMMON_SECTION_HEADER2",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER",
+					"name": "Header",
+					"comment": "In edk2, this is defined as a separate structure with the same fields. Here a nested structure is used for simplicity."
+				},
+				{
+					"type": "dword",
+					"name": "ExtendedSize",
+					"comment": "If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\nSize is not equal to 0xFFFFFF, then this field does not exist."
+				}
+			]
+		},
+		{
+			"name": "EFI_COMPRESSION_SECTION",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER",
+					"name": "CommonHeader",
+					"comment": "Usual common section header. CommonHeader.Type = EFI_SECTION_COMPRESSION."
+				},
+				{
+					"type": "dword",
+					"name": "UncompressedLength",
+					"comment": "The UINT32 that indicates the size of the section data after decompression."
+				},
+				{
+					"type": "byte",
+					"name": "CompressionType",
+					"comment": "Indicates which compression algorithm is used."
+				}
+			]
+		},
+		{
+			"name": "EFI_COMPRESSION_SECTION2",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER2",
+					"name": "CommonHeader",
+					"comment": "Usual common section header. CommonHeader.Type = EFI_SECTION_COMPRESSION."
+				},
+				{
+					"type": "dword",
+					"name": "UncompressedLength",
+					"comment": "The UINT32 that indicates the size of the section data after decompression."
+				},
+				{
+					"type": "byte",
+					"name": "CompressionType",
+					"comment": "Indicates which compression algorithm is used."
 				}
 			]
 		}
