@@ -15,13 +15,7 @@
  */
 package efidra;
 
-import java.awt.BorderLayout;
 import java.io.IOException;
-import java.util.Arrays;
-
-import javax.swing.JPanel;
-
-import com.opencsv.exceptions.CsvValidationException;
 
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
@@ -35,8 +29,8 @@ import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.DWordDataType;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.Integer3DataType;
-import ghidra.program.model.data.IntegerDataType;
 import ghidra.program.model.data.QWordDataType;
 import ghidra.program.model.data.StringDataType;
 import ghidra.program.model.data.StructureDataType;
@@ -48,9 +42,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
-import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.util.CodeUnitInsertionException;
-import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
@@ -91,80 +83,6 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		// TODO: Name the analyzer and give it a description.
 
 		super("EFIdra UEFI Analyzer", "Analyze a loaded UEFI ROM", AnalyzerType.BYTE_ANALYZER);
-		
-		GUID_STRUCT = new StructureDataType(LABEL_EFI_GUID, 0);
-		GUID_STRUCT.add(DWORD, "Data1", null);
-		GUID_STRUCT.add(WORD, "Data2", null);
-		GUID_STRUCT.add(WORD, "Data3", null);
-		GUID_STRUCT.add(new ArrayDataType(BYTE, EFIGUIDs.EFI_GUID_DATA4_LEN, 
-				BYTE.getLength()), "Data4", null);
-		
-		BLOCK_MAP_ENTRY_STRUCT = new StructureDataType(LABEL_EFI_FV_BLOCK_MAP_ENTRY, 0);
-		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "NumBlocks", 
-				"The number of sequential blocks which are of the same size.");
-		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "Length",
-				"The size of the blocks.");
-		
-		VOLUME_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FIRMWARE_VOLUME_HEADER, 0);
-		VOLUME_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareVolume.ZERO_VECTOR_LEN, 
-				BYTE.getLength()), "ZeroVector", 
-				"The first 16 bytes are reserved to allow for the reset vector of\n"
-				+ "	processors whose reset vector is at address 0.");
-		VOLUME_HEADER_STRUCT.add(GUID_STRUCT, "FileSystemGuid", 
-				"Declares the file system with which the firmware volume is formatted.");
-		VOLUME_HEADER_STRUCT.add(QWORD, "FvLength", 
-				"Length in bytes of the complete firmware volume, including the header.");
-		VOLUME_HEADER_STRUCT.add(StringDataType.dataType, 4, "Signature",
-				"Set to EFI_FVH_SIGNATURE");
-		VOLUME_HEADER_STRUCT.add(DWORD, "Attributes",
-				"Declares capabilities and power-on defaults for the firmware volume.");
-		VOLUME_HEADER_STRUCT.add(WORD, "HeaderLength",
-				"Length in bytes of the complete firmware volume header.");
-		VOLUME_HEADER_STRUCT.add(WORD, "Checksum",
-				"A 16-bit checksum of the firmware volume header. A valid header sums to zero.");
-		VOLUME_HEADER_STRUCT.add(WORD, "ExtHeaderOffset", 
-				"Offset, relative to the start of the header, of the extended header\n"
-				+ "(EFI_FIRMWARE_VOLUME_EXT_HEADER) or zero if there is no extended header.");
-		VOLUME_HEADER_STRUCT.add(BYTE, "Reserved",
-				"This field must always be set to zero.");
-		VOLUME_HEADER_STRUCT.add(WORD, "Revision",
-				"Set to 2. Future versions of this specification may define new header fields and will\n"
-				+ "increment the Revision field accordingly.");
-		VOLUME_HEADER_STRUCT.add(BLOCK_MAP_ENTRY_STRUCT, "BlockMap",
-				"An array of run-length encoded FvBlockMapEntry structures. The array is\n"
-				+ "terminated with an entry of {0,0}.");
-		
-		EFI_FFS_INTEGRITY_CHECK = new StructureDataType(LABEL_EFI_FFS_INTEGRITY_CHECK, 0);
-		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "Header", "8-bit checksum of the file header");
-		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "File", "8-bit checksum of the file contents");
-		
-		FILE_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FFS_FILE_HEADER, 0);
-		FILE_HEADER_STRUCT.add(GUID_STRUCT, "Name", 
-				"This GUID is the file name. It is used to uniquely identify the file.");
-		FILE_HEADER_STRUCT.add(EFI_FFS_INTEGRITY_CHECK, "IntegrityCheck", 
-				"Used to verify the integrity of the file.");
-		FILE_HEADER_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
-		FILE_HEADER_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
-		FILE_HEADER_STRUCT.add(Integer3DataType.dataType, EFIFirmwareFile.EFI_FF_SIZE_LEN, "Size",
-				"The length of the file in bytes, including the FFS header.");
-		FILE_HEADER_STRUCT.add(BYTE, "State", 
-				"Used to track the state of the file throughout the life of the file from creation to deletion.");
-		
-		FILE_HEADER2_STRUCT = FILE_HEADER_STRUCT.clone(null);
-		FILE_HEADER2_STRUCT.add(QWORD, "ExtendedSize", 
-				"If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\n"
-				+ "If FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.");
-		
-		SECTION_HEADER_STRUCT = new StructureDataType(LABEL_EFI_COMMON_SECTION_HEADER, 0);
-		SECTION_HEADER_STRUCT.add(Integer3DataType.dataType, "Size", 
-				"A 24-bit unsigned integer that contains the total size of the section in bytes,\n"
-				+ "including the EFI_COMMON_SECTION_HEADER.");
-		SECTION_HEADER_STRUCT.add(BYTE, "Type", "Declares the section type.");
-
-		SECTION_HEADER2_STRUCT = SECTION_HEADER_STRUCT.clone(null);
-		SECTION_HEADER2_STRUCT.add(DWORD, "ExtendedSize", 
-				"If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\n"
-				+ "Size is not equal to 0xFFFFFF, then this field does not exist.");
 	}
 
 	@Override
@@ -204,7 +122,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				listing.createData(vhBase, VOLUME_HEADER_STRUCT);
 				StringBuilder volHeaderSb = new StringBuilder();
 				EFIFirmwareVolume fragVolHeader = new EFIFirmwareVolume(memory, programFragment);
-				String fvGUID = fragVolHeader.getFileSystemGUID();
+				String fvGUID = fragVolHeader.getNameGUID();
 				String fvName = guids.getReadableName(fvGUID);
 				volHeaderSb.append(fvName);
 				if (!fvName.equals(fvGUID)) {
@@ -300,6 +218,83 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		}
 	}
 	
+	private void initStructures(Program program) {
+		DataTypeManager dtm = program.getDataTypeManager();
+		GUID_STRUCT = new StructureDataType(LABEL_EFI_GUID, 0, dtm);
+		GUID_STRUCT.add(DWORD, "Data1", null);
+		GUID_STRUCT.add(WORD, "Data2", null);
+		GUID_STRUCT.add(WORD, "Data3", null);
+		GUID_STRUCT.add(new ArrayDataType(BYTE, EFIGUIDs.EFI_GUID_DATA4_LEN, 
+				BYTE.getLength()), "Data4", null);
+		
+		BLOCK_MAP_ENTRY_STRUCT = new StructureDataType(LABEL_EFI_FV_BLOCK_MAP_ENTRY, 0, dtm);
+		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "NumBlocks", 
+				"The number of sequential blocks which are of the same size.");
+		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "Length",
+				"The size of the blocks.");
+		
+		VOLUME_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FIRMWARE_VOLUME_HEADER, 0, dtm);
+		VOLUME_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareVolume.ZERO_VECTOR_LEN, 
+				BYTE.getLength()), "ZeroVector", 
+				"The first 16 bytes are reserved to allow for the reset vector of\n"
+				+ "	processors whose reset vector is at address 0.");
+		VOLUME_HEADER_STRUCT.add(GUID_STRUCT, "FileSystemGuid", 
+				"Declares the file system with which the firmware volume is formatted.");
+		VOLUME_HEADER_STRUCT.add(QWORD, "FvLength", 
+				"Length in bytes of the complete firmware volume, including the header.");
+		VOLUME_HEADER_STRUCT.add(StringDataType.dataType, 4, "Signature",
+				"Set to EFI_FVH_SIGNATURE");
+		VOLUME_HEADER_STRUCT.add(DWORD, "Attributes",
+				"Declares capabilities and power-on defaults for the firmware volume.");
+		VOLUME_HEADER_STRUCT.add(WORD, "HeaderLength",
+				"Length in bytes of the complete firmware volume header.");
+		VOLUME_HEADER_STRUCT.add(WORD, "Checksum",
+				"A 16-bit checksum of the firmware volume header. A valid header sums to zero.");
+		VOLUME_HEADER_STRUCT.add(WORD, "ExtHeaderOffset", 
+				"Offset, relative to the start of the header, of the extended header\n"
+				+ "(EFI_FIRMWARE_VOLUME_EXT_HEADER) or zero if there is no extended header.");
+		VOLUME_HEADER_STRUCT.add(BYTE, "Reserved",
+				"This field must always be set to zero.");
+		VOLUME_HEADER_STRUCT.add(WORD, "Revision",
+				"Set to 2. Future versions of this specification may define new header fields and will\n"
+				+ "increment the Revision field accordingly.");
+		VOLUME_HEADER_STRUCT.add(BLOCK_MAP_ENTRY_STRUCT, "BlockMap",
+				"An array of run-length encoded FvBlockMapEntry structures. The array is\n"
+				+ "terminated with an entry of {0,0}.");
+		
+		EFI_FFS_INTEGRITY_CHECK = new StructureDataType(LABEL_EFI_FFS_INTEGRITY_CHECK, 0, dtm);
+		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "Header", "8-bit checksum of the file header");
+		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "File", "8-bit checksum of the file contents");
+		
+		FILE_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FFS_FILE_HEADER, 0, dtm);
+		FILE_HEADER_STRUCT.add(GUID_STRUCT, "Name", 
+				"This GUID is the file name. It is used to uniquely identify the file.");
+		FILE_HEADER_STRUCT.add(EFI_FFS_INTEGRITY_CHECK, "IntegrityCheck", 
+				"Used to verify the integrity of the file.");
+		FILE_HEADER_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
+		FILE_HEADER_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
+		FILE_HEADER_STRUCT.add(Integer3DataType.dataType, EFIFirmwareFile.EFI_FF_SIZE_LEN, "Size",
+				"The length of the file in bytes, including the FFS header.");
+		FILE_HEADER_STRUCT.add(BYTE, "State", 
+				"Used to track the state of the file throughout the life of the file from creation to deletion.");
+		
+		FILE_HEADER2_STRUCT = (StructureDataType) FILE_HEADER_STRUCT.copy(dtm);
+		FILE_HEADER2_STRUCT.add(QWORD, "ExtendedSize", 
+				"If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\n"
+				+ "If FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.");
+		
+		SECTION_HEADER_STRUCT = new StructureDataType(LABEL_EFI_COMMON_SECTION_HEADER, 0, dtm);
+		SECTION_HEADER_STRUCT.add(Integer3DataType.dataType, "Size", 
+				"A 24-bit unsigned integer that contains the total size of the section in bytes,\n"
+				+ "including the EFI_COMMON_SECTION_HEADER.");
+		SECTION_HEADER_STRUCT.add(BYTE, "Type", "Declares the section type.");
+
+		SECTION_HEADER2_STRUCT = (StructureDataType) SECTION_HEADER_STRUCT.copy(dtm);
+		SECTION_HEADER2_STRUCT.add(DWORD, "ExtendedSize", 
+				"If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\n"
+				+ "Size is not equal to 0xFFFFFF, then this field does not exist.");
+	}
+	
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
@@ -307,6 +302,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		// TODO: Perform analysis when things get added to the 'program'.  Return true if the
 		// analysis succeeded.
 		
+		initStructures(program);
 		guids = new EFIGUIDs();
 		programBase = program.getImageBase();
 		Listing listing = program.getListing();

@@ -9,6 +9,9 @@ public class EFIFirmwareSection {
 	private static final int EFI_SECTION_EXT_SIZE_INDICATOR = 0xFFFFFF;
 	public static final int EFI_SECTION_HEADER_SIZE = 4;
 	public static final int EFI_SECTION_HEADER2_SIZE = 8;
+	private static final int EFI_SECTION_COMP_HEADER_EXTRA = 5;
+	private static final int EFI_SECTION_FFSG_HEADER_EXTRA = EFIGUIDs.EFI_GUID_LEN;
+	private static final int EFI_SECTION_GDFN_HEADER_EXTRA = EFIGUIDs.EFI_GUID_LEN + 4;
 	
 	// Section Type values
 	public static final byte EFI_SECTION_ALL = 0x00;
@@ -58,101 +61,128 @@ public class EFIFirmwareSection {
 	private long basePointer;
 	private int headerSize;
 	
-	private void parseHeader() {
+	// EFI_SECTION_COMPRESSION extra attributes
+	/*
+	 * // CompressionType of EFI_COMPRESSION_SECTION. 
+	 * #define EFI_NOT_COMPRESSED 0x00 
+	 * #define EFI_STANDARD_COMPRESSION 0x01 
+	 * // An encapsulation section type in which the 
+	 * // section data is compressed. 
+	 * typedef struct {
+	 * 	 EFI_COMMON_SECTION_HEADER CommonHeader; 
+	 * 	 UINT32 UncompressedLength; 
+	 *   UINT8 CompressionType; 
+	 * } EFI_COMPRESSION_SECTION;
+	 * 
+	 * typedef struct { 
+	 *   EFI_COMMON_SECTION_HEADER2 CommonHeader; 
+	 *   UINT32 UncompressedLength; 
+	 *   UINT8 CompressionType; 
+	 * } EFI_COMPRESSION_SECTION2;
+	 */
+	private int uncompressedLength;
+	private byte compressionType;
+	
+	// EFI_FREEFORM_SUBTYPE_GUID_SECTION extra attributes
+	/*
+     * // Leaf section which contains a single GUID.
+     * typedef struct {
+     *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+     *   EFI_GUID                    SubTypeGuid;
+     * } EFI_FREEFORM_SUBTYPE_GUID_SECTION;
+	 *
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   EFI_GUID                    SubTypeGuid;
+	 * } EFI_FREEFORM_SUBTYPE_GUID_SECTION2;
+	 */
+	private String subTypeGuid;
+	
+	// EFI_GUID_DEFINED_SECTION extra attributes
+	/*
+	 * // Attributes of EFI_GUID_DEFINED_SECTION
+	 * #define EFI_GUIDED_SECTION_PROCESSING_REQUIRED  0x01
+	 * #define EFI_GUIDED_SECTION_AUTH_STATUS_VALID    0x02
+	 * // Leaf section which is encapsulation defined by specific GUID
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+	 *   EFI_GUID                    SectionDefinitionGuid;
+	 *   UINT16                      DataOffset;
+	 *   UINT16                      Attributes;
+	 * } EFI_GUID_DEFINED_SECTION;
+	 *
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   EFI_GUID                    SectionDefinitionGuid;
+	 *   UINT16                      DataOffset;
+	 *   UINT16                      Attributes;
+	 * } EFI_GUID_DEFINED_SECTION2;
+	 */
+	private String sectionDefinitionGuid;
+	private short dataOffset;
+	private short attributes;
+	
+	// EFI_USER_INTERFACE_SECTION extra attributes
+	/*
+	 * // Leaf section which contains a unicode string that
+	 * // is human readable file name.
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+	 *   // Array of unicode string.
+	 *   CHAR16                      FileNameString[1];
+	 * } EFI_USER_INTERFACE_SECTION;
+	 * 
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   // Array of unicode string.
+	 *   CHAR16                      FileNameString[1];
+	 * } EFI_USER_INTERFACE_SECTION2;
+	 */
+	private String fileNameString;
+	
+	// EFI_VERSION_SECTION extra attributes;
+	/*
+	 * // Leaf section which contains a numeric build number and
+	 * // an optional unicode string that represent the file revision.
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+	 *   UINT16                      BuildNumber;
+	 *   CHAR16                      VersionString[1];
+	 * } EFI_VERSION_SECTION;
+	 * 
+	 * typedef struct {
+	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   UINT16                      BuildNumber;
+	 *   CHAR16                      VersionString[1];
+	 * } EFI_VERSION_SECTION2;
+	 */
+	private short buildNumber;
+	private String versionString;
+	
+	private void parseHeader(BinaryReader reader) throws IOException {
 		if (type == EFI_SECTION_COMPRESSION) {
-//			//
-//			// CompressionType of EFI_COMPRESSION_SECTION.
-//			//
-//			#define EFI_NOT_COMPRESSED        0x00
-//			#define EFI_STANDARD_COMPRESSION  0x01
-//			//
-//			// An encapsulation section type in which the
-//			// section data is compressed.
-//			//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER   CommonHeader;
-//			  UINT32                      UncompressedLength;
-//			  UINT8                       CompressionType;
-//			} EFI_COMPRESSION_SECTION;
-//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER2  CommonHeader;
-//			  UINT32                      UncompressedLength;
-//			  UINT8                       CompressionType;
-//			} EFI_COMPRESSION_SECTION2;
+			uncompressedLength = reader.readNextInt();
+			compressionType = reader.readNextByte();
+			headerSize += EFI_SECTION_COMP_HEADER_EXTRA;
 		} else if (type == EFI_SECTION_FREEFORM_SUBTYPE_GUID) {
-//			//
-//			// Leaf section which contains a single GUID.
-//			//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER   CommonHeader;
-//			  EFI_GUID                    SubTypeGuid;
-//			} EFI_FREEFORM_SUBTYPE_GUID_SECTION;
-//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER2  CommonHeader;
-//			  EFI_GUID                    SubTypeGuid;
-//			} EFI_FREEFORM_SUBTYPE_GUID_SECTION2;
+			subTypeGuid = EFIGUIDs.bytesToGUIDString(
+					reader.readNextByteArray(EFIGUIDs.EFI_GUID_LEN));
+			headerSize += EFI_SECTION_FFSG_HEADER_EXTRA;
 		} else if (type == EFI_SECTION_GUID_DEFINED) {
-//			//
-//			// Attributes of EFI_GUID_DEFINED_SECTION
-//			//
-//			#define EFI_GUIDED_SECTION_PROCESSING_REQUIRED  0x01
-//			#define EFI_GUIDED_SECTION_AUTH_STATUS_VALID    0x02
-//			//
-//			// Leaf section which is encapsulation defined by specific GUID
-//			//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER   CommonHeader;
-//			  EFI_GUID                    SectionDefinitionGuid;
-//			  UINT16                      DataOffset;
-//			  UINT16                      Attributes;
-//			} EFI_GUID_DEFINED_SECTION;
-//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER2  CommonHeader;
-//			  EFI_GUID                    SectionDefinitionGuid;
-//			  UINT16                      DataOffset;
-//			  UINT16                      Attributes;
-//			} EFI_GUID_DEFINED_SECTION2;
+			sectionDefinitionGuid = EFIGUIDs.bytesToGUIDString(
+					reader.readNextByteArray(EFIGUIDs.EFI_GUID_LEN));
+			dataOffset = reader.readNextShort();
+			attributes = reader.readNextShort();
+			headerSize += EFI_SECTION_GDFN_HEADER_EXTRA;
 		} else if (type == EFI_SECTION_USER_INTERFACE) {
-//			//
-//			// Leaf section which contains a unicode string that
-//			// is human readable file name.
-//			//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER   CommonHeader;
-//
-//			  //
-//			  // Array of unicode string.
-//			  //
-//			  CHAR16                      FileNameString[1];
-//			} EFI_USER_INTERFACE_SECTION;
-//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER2  CommonHeader;
-//
-//			  //
-//			  // Array of unicode string.
-//			  //
-//			  CHAR16                      FileNameString[1];
-//			} EFI_USER_INTERFACE_SECTION2;
+			fileNameString = reader.readNextUnicodeString();
+			// number of characters * 2 since each character is 2 bytes
+			headerSize += fileNameString.length() * 2;
 		} else if (type == EFI_SECTION_VERSION) {
-//			//
-//			// Leaf section which contains a numeric build number and
-//			// an optional unicode string that represent the file revision.
-//			//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER   CommonHeader;
-//			  UINT16                      BuildNumber;
-//			  CHAR16                      VersionString[1];
-//			} EFI_VERSION_SECTION;
-//
-//			typedef struct {
-//			  EFI_COMMON_SECTION_HEADER2  CommonHeader;
-//			  UINT16                      BuildNumber;
-//			  CHAR16                      VersionString[1];
-//			} EFI_VERSION_SECTION2;
+			buildNumber = reader.readNextShort();
+			versionString = reader.readNextUnicodeString();
+			// 2 * version length for 2 byte characters + 2 bytes for short
+			headerSize += versionString.length() * 2 + 2;
 		}
 		// All other types simply follow the standard EFI_COMMON_SECTION_HEADER
 	}
@@ -171,7 +201,7 @@ public class EFIFirmwareSection {
 			// 3 byte size + 1 byte type + 4 byte extendedSize
 			headerSize = EFI_SECTION_HEADER2_SIZE;
 		}
-		
+		parseHeader(reader);
 		sectionData = reader.readNextByteArray(size - headerSize);
 	}
 	

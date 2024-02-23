@@ -141,7 +141,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
 		try {
-			memory.createInitializedBlock("Unpadded Full ROM", progBase.add(paddingOffset), 
+			memory.createInitializedBlock("Unassigned and Padding", progBase.add(paddingOffset), 
 					provider.getInputStream(paddingOffset), provider.length() - paddingOffset + 1,
 					monitor, false);
 		} catch (LockException e) {
