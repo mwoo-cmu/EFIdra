@@ -1,0 +1,165 @@
+{
+	"parser": {
+	},
+	"structures": [
+		{
+			"name": "EFI_GUID",
+			"members": [
+				{
+					"type": "dword",
+					"name": "Data1"
+				},
+				{
+					"type": "word",
+					"name": "Data2"
+				},
+				{
+					"type": "word",
+					"name": "Data3"
+				},
+				{
+					"type": "byte[]",
+					"size": 8,
+					"name": "Data4"
+				}
+			]
+		},
+		{
+			"name": "EFI_FV_BLOCK_MAP_ENTRY",
+			"members": [
+				{
+					"type": "dword",
+					"name": "NumBlocks",
+					"comment": "The number of sequential blocks which are of the same size."
+				},
+				{
+					"type": "dword",
+					"name": "Length",
+					"comment": "The size of the blocks."
+				}
+			]
+		},
+		{
+			"name": "EFI_FIRMWARE_VOLUME_HEADER",
+			"members": [
+				{
+					"type": "byte[]",
+					"size": 16,
+					"name": "ZeroVector",
+					"comment": "The first 16 bytes are reserved to allow for the reset vector of\nprocessors whose reset vector is at address 0."
+				},
+				{
+					"type": "EFI_GUID",
+					"name": "FileSystemGuid",
+					"comment": "Declares the file system with which the firmware volume is formatted."
+				},
+				{
+					"type": "qword",
+					"name": "FvLength",
+					"comment": "Length in bytes of the complete firmware volume, including the header."
+				},
+				{
+					"type": "string",
+					"size": 4,
+					"name": "Signature",
+					"comment": "Set to EFI_FVH_SIGNATURE"
+				},
+				{
+					"type": "dword",
+					"name": "Attributes",
+					"comment": "Declares capabilities and power-on defaults for the firmware volume."
+				},
+				{
+					"type": "word",
+					"name": "HeaderLength",
+					"comment": "Length in bytes of the complete firmware volume header"
+				},
+				{
+					"type": "word",
+					"name": "Checksum",
+					"comment": "A 16-bit checksum of the firmware volume header. A valid header sums to zero."
+				},
+				{
+					"type": "word",
+					"name": "ExtHeaderOffset",
+					"comment": "Offset, relative to the start of the header, of the extended header\n(EFI_FIRMWARE_VOLUME_EXT_HEADER) or zero if there is no extended header."
+				},
+				{
+					"type": "byte",
+					"name": "Reserved",
+					"comment": "This field must always be set to zero."
+				},
+				{
+					"type": "word",
+					"name": "Revision",
+					"comment": "Set to 2. Future versions of this specification may define new header fields and will\nincrement the Revision field accordingly."
+				},
+				{
+					"type": "EFI_FV_BLOCK_MAP_ENTRY",
+					"name": "BlockMap",
+					"comment": "An array of run-length encoded FvBlockMapEntry structures. The array is\nterminated with an entry of {0,0}."
+				}
+			]
+		},
+		{
+			"name": "EFI_FFS_INTEGRITY_CHECK",
+			"members": [
+				{
+					"type": "byte",
+					"name": "Header",
+					"comment": "8-bit checksum of the file header"
+				},
+				{
+					"type": "byte",
+					"name": "File",
+					"comment": "8-bit checksum of the file contents"
+				}
+			]
+		},
+		{
+			"name": "EFI_FFS_FILE_HEADER",
+			"members": [
+				{
+					"type": "EFI_GUID",
+					"name": "Name",
+					"comment": "This GUID is the file name. It is used to uniquely identify the file."
+				},
+				{
+					"type": "EFI_FFS_INTEGRITY_CHECK",
+					"name": "IntegrityCheck",
+					"comment": "Used to verify the integrity of the file."
+				},
+				{
+					"type": "byte",
+					"name": "Type",
+					"comment": "Identifies the type of file."
+				},
+				{
+					"type": "byte",
+					"name": "Attributes",
+					"comment": "Declares various file attribute bits."
+				},
+				{
+					"type": "int3",
+					"name": "Size",
+					"comment": "The length of the file in bytes, including the FFS header."
+				},
+				{
+					"type": "byte",
+					"name": "State",
+					"comment": "Used to track the state of the file throughout the life of the file from creation to deletion."
+				},
+				{
+					"type": "qword",
+					"name": "ExtendedSize",
+					"comment": "If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\nIf FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.",
+					"conditional": {
+						"field": "Attributes",
+						"operator": "",
+						"value": 1
+					}
+				}
+			]
+		}
+	]
+}

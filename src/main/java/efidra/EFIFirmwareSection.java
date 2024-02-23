@@ -69,14 +69,20 @@ public class EFIFirmwareSection {
 	 * // An encapsulation section type in which the 
 	 * // section data is compressed. 
 	 * typedef struct {
-	 * 	 EFI_COMMON_SECTION_HEADER CommonHeader; 
-	 * 	 UINT32 UncompressedLength; 
+	 *   // Usual common section header. CommonHeader.Type = EFI_SECTION_COMPRESSION.
+	 * 	 EFI_COMMON_SECTION_HEADER CommonHeader;
+	 *   // The UINT32 that indicates the size of the section data after decompression. 
+	 * 	 UINT32 UncompressedLength;
+	 *   // Indicates which compression algorithm is used. 
 	 *   UINT8 CompressionType; 
 	 * } EFI_COMPRESSION_SECTION;
 	 * 
 	 * typedef struct { 
+	 *   // Usual common section header. CommonHeader.Type = EFI_SECTION_COMPRESSION.
 	 *   EFI_COMMON_SECTION_HEADER2 CommonHeader; 
+	 *   // The UINT32 that indicates the size of the section data after decompression.
 	 *   UINT32 UncompressedLength; 
+	 *   // Indicates which compression algorithm is used.
 	 *   UINT8 CompressionType; 
 	 * } EFI_COMPRESSION_SECTION2;
 	 */
@@ -87,12 +93,16 @@ public class EFIFirmwareSection {
 	/*
      * // Leaf section which contains a single GUID.
      * typedef struct {
+     * 	 // Common section header. CommonHeader.Type = EFI_SECTION_FREEFORM_SUBTYPE_GUID.
      *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+     *   // This GUID is defined by the creator of the file. It is a vendor-defined file type.
      *   EFI_GUID                    SubTypeGuid;
      * } EFI_FREEFORM_SUBTYPE_GUID_SECTION;
 	 *
 	 * typedef struct {
+	 *   // Common section header. CommonHeader.Type = EFI_SECTION_FREEFORM_SUBTYPE_GUID.
 	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   // This GUID is defined by the creator of the file. It is a vendor-defined file type.
 	 *   EFI_GUID                    SubTypeGuid;
 	 * } EFI_FREEFORM_SUBTYPE_GUID_SECTION2;
 	 */
@@ -105,16 +115,24 @@ public class EFIFirmwareSection {
 	 * #define EFI_GUIDED_SECTION_AUTH_STATUS_VALID    0x02
 	 * // Leaf section which is encapsulation defined by specific GUID
 	 * typedef struct {
+	 *   // The common section header. CommonHeader.Type = EFI_SECTION_GUID_DEFINED.
 	 *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+	 *   // The GUID that defines the format of the data that follows. It is a vendor-defined section type.
 	 *   EFI_GUID                    SectionDefinitionGuid;
+	 *   // Contains the offset in bytes from the beginning of the common header to the first byte of the data.
 	 *   UINT16                      DataOffset;
+	 *   // The bit field that declares some specific characteristics of the section contents.
 	 *   UINT16                      Attributes;
 	 * } EFI_GUID_DEFINED_SECTION;
 	 *
 	 * typedef struct {
+	 *   // The common section header. CommonHeader.Type = EFI_SECTION_GUID_DEFINED.
 	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   // The GUID that defines the format of the data that follows. It is a vendor-defined section type.
 	 *   EFI_GUID                    SectionDefinitionGuid;
+	 *   // Contains the offset in bytes from the beginning of the common header to the first byte of the data.
 	 *   UINT16                      DataOffset;
+	 *   // The bit field that declares some specific characteristics of the section contents.
 	 *   UINT16                      Attributes;
 	 * } EFI_GUID_DEFINED_SECTION2;
 	 */
@@ -146,13 +164,19 @@ public class EFIFirmwareSection {
 	 * // an optional unicode string that represent the file revision.
 	 * typedef struct {
 	 *   EFI_COMMON_SECTION_HEADER   CommonHeader;
+	 *   // A UINT16 that represents a particular build. Subsequent builds have monotonically
+ 	 *   // increasing build numbers relative to earlier builds.
 	 *   UINT16                      BuildNumber;
+	 *   // Array of unicode string.
 	 *   CHAR16                      VersionString[1];
 	 * } EFI_VERSION_SECTION;
 	 * 
 	 * typedef struct {
 	 *   EFI_COMMON_SECTION_HEADER2  CommonHeader;
+	 *   // A UINT16 that represents a particular build. Subsequent builds have monotonically
+ 	 *   // increasing build numbers relative to earlier builds.
 	 *   UINT16                      BuildNumber;
+	 *   // Array of unicode string.
 	 *   CHAR16                      VersionString[1];
 	 * } EFI_VERSION_SECTION2;
 	 */

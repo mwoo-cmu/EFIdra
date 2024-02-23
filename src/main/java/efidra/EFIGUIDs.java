@@ -21,6 +21,7 @@ public class EFIGUIDs {
 	public static final int EFI_GUID_DATA4_LEN = 8;
 	
 	private static HashMap<String, String> guids = new HashMap<>();
+	private static final String GUIDS_CSV = "guids.csv";
 	
 	public static String bytesToGUIDString(byte[] bytes) {
 		// 16 bytes from 4 + 2 + 2 + 8
@@ -50,7 +51,7 @@ public class EFIGUIDs {
 		if (loadDefaults) {
 			try {
 //				parseGUIDsFromURL("https://fwupd.org/lvfs/shards/export/csv");
-				parseGUIDsFromFile(Application.getModuleDataFile("guids.csv").getFile(true));
+				parseGUIDsFromFile(Application.getModuleDataFile(GUIDS_CSV).getFile(true));
 			} catch (CsvValidationException | IOException e) {
 				Msg.showError(e, null, "GUIDs Error", "Error loading default GUIDs");
 				e.printStackTrace();
@@ -59,7 +60,7 @@ public class EFIGUIDs {
 	}
 
 	public EFIGUIDs() {
-		this(true);
+		this(guids.size() == 0);
 	}
 	
 	public String getReadableName(String guid) {

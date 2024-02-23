@@ -15,13 +15,27 @@
  */
 package efidra;
 
+import java.awt.BorderLayout;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.util.HashMap;
+
+import javax.swing.JPanel;
+
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.MemoryByteProvider;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.framework.Application;
 import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
@@ -43,6 +57,7 @@ import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.util.CodeUnitInsertionException;
+import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
@@ -77,6 +92,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	
 	private Address programBase;
 	private EFIGUIDs guids;
+	
 
 	public efidraAnalyzer() {
 
@@ -293,6 +309,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		SECTION_HEADER2_STRUCT.add(DWORD, "ExtendedSize", 
 				"If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\n"
 				+ "Size is not equal to 0xFFFFFF, then this field does not exist.");
+		
+		EFIdraROMFormatLoader.init(program);
 	}
 	
 	@Override
