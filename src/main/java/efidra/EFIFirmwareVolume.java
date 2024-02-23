@@ -6,6 +6,10 @@ import java.util.Arrays;
 import java.util.List;
 
 import ghidra.app.util.bin.BinaryReader;
+import ghidra.app.util.bin.MemoryByteProvider;
+import ghidra.program.model.listing.ProgramFragment;
+import ghidra.program.model.mem.Memory;
+import ghidra.util.GhidraLittleEndianDataConverter;
 
 public class EFIFirmwareVolume {
 	private class EFIFVBlockMapEntry {
@@ -146,6 +150,7 @@ public class EFIFirmwareVolume {
 				// free space, skip until end
 //				reader.setPointerIndex(fvEnd);
 				while (curIdx < fvEnd) {
+					// read until the end of the free space
 					int nextInt = reader.readNextInt();
 					if (nextInt != 0xffffffff) {
 						reader.setPointerIndex(reader.getPointerIndex() - 4);
@@ -174,7 +179,7 @@ public class EFIFirmwareVolume {
 	 * @param reader A BinaryReader with its index at the start of this FV header 
 	 * @throws IOException if an exception occurs while reading from the reader
 	 */
-	public EFIFirmwareVolume(BinaryReader reader) throws IOException {
+	public EFIFirmwareVolume(BinaryReader reader, boolean readFileSystem) throws IOException {
 		// is there some better way to do this? please tell me there is
 		Arrays.fill(FREE_SPACE_HEADER, (byte)0xff);
 		
@@ -198,10 +203,24 @@ public class EFIFirmwareVolume {
 				
 		parseHeader(reader);
 		
-		long fvEnd = basePointer + fvLength;
-		readFileSystems(reader, fvEnd);
-		
-		reader.setPointerIndex(fvEnd);
+		if (readFileSystem) {
+			long fvEnd = basePointer + fvLength;
+			readFileSystems(reader, fvEnd);
+			
+			// in case malformed files have read past the FirmwareVolume end 
+			reader.setPointerIndex(fvEnd);
+		}
+	}
+	
+	public EFIFirmwareVolume(BinaryReader reader) throws IOException {
+		this(reader, true);
+	}
+	
+	public EFIFirmwareVolume(Memory memory, ProgramFragment fragment) throws IOException {
+		this(new BinaryReader(new MemoryByteProvider(
+				memory, fragment.getFirstRange().getAddressSpace()), 
+				GhidraLittleEndianDataConverter.INSTANCE, 
+				fragment.getMinAddress().getOffset()), false);
 	}
 	
 	public long getBasePointer() {

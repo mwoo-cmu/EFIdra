@@ -35,6 +35,7 @@ import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.DWordDataType;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.Integer3DataType;
 import ghidra.program.model.data.IntegerDataType;
 import ghidra.program.model.data.QWordDataType;
 import ghidra.program.model.data.StringDataType;
@@ -68,6 +69,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	private StructureDataType EFI_FFS_INTEGRITY_CHECK;
 	private StructureDataType FILE_HEADER_STRUCT;
 	private StructureDataType FILE_HEADER2_STRUCT;
+	private StructureDataType SECTION_HEADER_STRUCT;
+	private StructureDataType SECTION_HEADER2_STRUCT;
 	
 	public static final String LABEL_EFI_GUID = "EFI_GUID";
 	public static final String LABEL_EFI_FV_BLOCK_MAP_ENTRY = "EFI_FV_BLOCK_MAP_ENTRY";
@@ -75,8 +78,13 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	public static final String LABEL_EFI_FFS_INTEGRITY_CHECK = "EFI_FFS_INTEGRITY_CHECK";
 	public static final String LABEL_EFI_FFS_FILE_HEADER = "EFI_FFS_FILE_HEADER";
 	public static final String LABEL_EFI_FFS_FILE_HEADER2 = "EFI_FFS_FILE_HEADER2";
+	public static final String LABEL_EFI_COMMON_SECTION_HEADER = "EFI_COMMON_SECTION_HEADER";
+	public static final String LABEL_EFI_COMMON_SECTION_HEADER2 = "EFI_COMMON_SECTION_HEADER2";
 	
 	public static final String NVRAM_GUID = "CEF5B9A3-476D-497F-9FDC-E98143E0422C";
+	
+	private Address programBase;
+	private EFIGUIDs guids;
 
 	public efidraAnalyzer() {
 
@@ -101,7 +109,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		VOLUME_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareVolume.ZERO_VECTOR_LEN, 
 				BYTE.getLength()), "ZeroVector", 
 				"The first 16 bytes are reserved to allow for the reset vector of\n"
-						+ "	processors whose reset vector is at address 0.");
+				+ "	processors whose reset vector is at address 0.");
 		VOLUME_HEADER_STRUCT.add(GUID_STRUCT, "FileSystemGuid", 
 				"Declares the file system with which the firmware volume is formatted.");
 		VOLUME_HEADER_STRUCT.add(QWORD, "FvLength", 
@@ -137,28 +145,26 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				"Used to verify the integrity of the file.");
 		FILE_HEADER_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
 		FILE_HEADER_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
-		FILE_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareFile.EFI_FF_SIZE_LEN, 
-				BYTE.getLength()), "Size", 
+		FILE_HEADER_STRUCT.add(Integer3DataType.dataType, EFIFirmwareFile.EFI_FF_SIZE_LEN, "Size",
 				"The length of the file in bytes, including the FFS header.");
 		FILE_HEADER_STRUCT.add(BYTE, "State", 
 				"Used to track the state of the file throughout the life of the file from creation to deletion.");
 		
-//		FILE_HEADER2_STRUCT = FILE_HEADER_STRUCT.clone();
-		FILE_HEADER2_STRUCT = new StructureDataType(LABEL_EFI_FFS_FILE_HEADER2, 0);
-		FILE_HEADER2_STRUCT.add(GUID_STRUCT, "Name", 
-				"This GUID is the file name. It is used to uniquely identify the file.");
-		FILE_HEADER2_STRUCT.add(EFI_FFS_INTEGRITY_CHECK, "IntegrityCheck", 
-				"Used to verify the integrity of the file.");
-		FILE_HEADER2_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
-		FILE_HEADER2_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
-		FILE_HEADER2_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareFile.EFI_FF_SIZE_LEN, 
-				BYTE.getLength()), "Size", 
-				"The length of the file in bytes, including the FFS header.");
-		FILE_HEADER2_STRUCT.add(BYTE, "State", 
-				"Used to track the state of the file throughout the life of the file from creation to deletion.");
+		FILE_HEADER2_STRUCT = FILE_HEADER_STRUCT.clone(null);
 		FILE_HEADER2_STRUCT.add(QWORD, "ExtendedSize", 
 				"If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\n"
 				+ "If FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.");
+		
+		SECTION_HEADER_STRUCT = new StructureDataType(LABEL_EFI_COMMON_SECTION_HEADER, 0);
+		SECTION_HEADER_STRUCT.add(Integer3DataType.dataType, "Size", 
+				"A 24-bit unsigned integer that contains the total size of the section in bytes,\n"
+				+ "including the EFI_COMMON_SECTION_HEADER.");
+		SECTION_HEADER_STRUCT.add(BYTE, "Type", "Declares the section type.");
+
+		SECTION_HEADER2_STRUCT = SECTION_HEADER_STRUCT.clone(null);
+		SECTION_HEADER2_STRUCT.add(DWORD, "ExtendedSize", 
+				"If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\n"
+				+ "Size is not equal to 0xFFFFFF, then this field does not exist.");
 	}
 
 	@Override
@@ -189,16 +195,28 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 //			"Option description goes here");
 	}
 
-	private void applyFileOrVolumeHeader(ProgramFragment programFragment, Listing listing) {
+	private void applyFileOrVolumeHeader(ProgramFragment programFragment, Listing listing, Memory memory) {
 		if (programFragment.getName().startsWith("UEFI Volume Header")) {
 			// this is a header fragment
 			try {
 				Address vhBase = programFragment.getMinAddress();
 				String checksum = listing.getComment(CodeUnit.PRE_COMMENT, vhBase);
 				listing.createData(vhBase, VOLUME_HEADER_STRUCT);
-				listing.setComment(vhBase.add(EFIFirmwareVolume.EFI_FV_CHECKSUM_OFFSET), 
-						CodeUnit.PRE_COMMENT, checksum);
+				StringBuilder volHeaderSb = new StringBuilder();
+				EFIFirmwareVolume fragVolHeader = new EFIFirmwareVolume(memory, programFragment);
+				String fvGUID = fragVolHeader.getFileSystemGUID();
+				String fvName = guids.getReadableName(fvGUID);
+				volHeaderSb.append(fvName);
+				if (!fvName.equals(fvGUID)) {
+					volHeaderSb.append(" (" +fvGUID + ")");
+				}
+				volHeaderSb.append("\n" + checksum);
+				listing.setComment(vhBase, 
+						CodeUnit.PRE_COMMENT, volHeaderSb.toString());
 			} catch (CodeUnitInsertionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
@@ -209,16 +227,35 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				Address fhBase = programFragment.getMinAddress();
 				String checksum = listing.getComment(CodeUnit.PRE_COMMENT, fhBase);
 				String comment = programFragment.getComment();
-				if (LABEL_EFI_FFS_FILE_HEADER2.equals(comment)) {
-					listing.createData(fhBase, FILE_HEADER2_STRUCT);
-					programFragment.setComment("");
-				} else if (LABEL_EFI_FFS_FILE_HEADER.equals(comment)) {
+				if (LABEL_EFI_FFS_FILE_HEADER.equals(comment)) {
 					listing.createData(fhBase, FILE_HEADER_STRUCT);
 					programFragment.setComment("");
+				} else if (LABEL_EFI_FFS_FILE_HEADER2.equals(comment)) {
+					listing.createData(fhBase, FILE_HEADER2_STRUCT);
+					programFragment.setComment("");
+				} else {
+					return;
 				}
-				listing.setComment(fhBase.add(EFIFirmwareFile.EFI_FF_CHECKSUM_OFFSET), 
-						CodeUnit.PRE_COMMENT, checksum);
+				StringBuilder fileHeaderSb = new StringBuilder();
+				EFIFirmwareFile fragFile = new EFIFirmwareFile(memory, programFragment);
+				String ffGUID = fragFile.getNameGUID();
+				String ffName = guids.getReadableName(ffGUID);
+				fileHeaderSb.append(ffName);
+				if (!ffName.equals(ffGUID)) {
+					fileHeaderSb.append(" (" + ffGUID + ")");
+				}
+				fileHeaderSb.append("\n" + checksum);
+				listing.setComment(fhBase, 
+						CodeUnit.PRE_COMMENT, fileHeaderSb.toString());
+				for (EFIFirmwareSection fragSec : fragFile.getSections()) {
+					listing.createData(programBase.add(fragSec.getBasePointer()), 
+							fragSec.getHeaderSize() == EFIFirmwareSection.EFI_SECTION_HEADER_SIZE ? 
+									SECTION_HEADER_STRUCT : SECTION_HEADER2_STRUCT);
+				}
 			} catch (CodeUnitInsertionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
@@ -243,7 +280,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 			if (programItem instanceof ProgramFragment) {
 				ProgramFragment programFragment = (ProgramFragment) programItem;
 //				MemoryBlock fragBlock = memory.getBlock(programFragment.getMinAddress());
-				applyFileOrVolumeHeader(programFragment, listing);
+				applyFileOrVolumeHeader(programFragment, listing, memory);
 				if (programFragment.getName().startsWith("NVRAM") || 
 						programFragment.getName().startsWith(NVRAM_GUID)) {
 					try {
@@ -270,6 +307,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		// TODO: Perform analysis when things get added to the 'program'.  Return true if the
 		// analysis succeeded.
 		
+		guids = new EFIGUIDs();
+		programBase = program.getImageBase();
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
 		Memory memory = program.getMemory();

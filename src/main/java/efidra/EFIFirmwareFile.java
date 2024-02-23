@@ -1,13 +1,14 @@
 package efidra;
 
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.MemoryByteProvider;
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.mem.Memory;
+import ghidra.util.GhidraLittleEndianDataConverter;
 
 public class EFIFirmwareFile {
 	public static final int EFI_FF_SIZE_LEN = 3;
@@ -92,6 +93,7 @@ public class EFIFirmwareFile {
 	private long basePointer;
 	private int headerSize;
 	private byte[] fileData;
+	private List<EFIFirmwareSection> sections;
 	
 	private void parseHeader(BinaryReader reader) throws IOException {
 		if ((attributes & FFS_ATTRIB_LARGE_FILE) != 0) {
@@ -131,8 +133,41 @@ public class EFIFirmwareFile {
 		}
 	}
 	
+	private void readFileSections(BinaryReader reader) throws IOException {
+		int dataLen = 0;
+		if (isHeader2()) {
+			dataLen = (int) (extendedSize - EFI_FF_HEADER_EXT_LEN);
+		} else {
+			dataLen = size - EFI_FF_HEADER_LEN;
+		}
+		if (dataLen <= 0) {
+			return;
+		}
+		fileData = reader.readNextByteArray(dataLen);
+		checkFileChecksum();
+		if (type == EFI_FV_FILETYPE_RAW || type == EFI_FV_FILETYPE_FFS_PAD) {
+			// these Firmware File types do not follow the Firmware Section structure
+			return;
+		}
+		long curIdx = reader.getPointerIndex() - dataLen;
+		reader.setPointerIndex(curIdx);
+		long ffEnd = basePointer + getSize();
+		while (curIdx < ffEnd) {
+			try {
+				sections.add(new EFIFirmwareSection(reader));
+			} catch (IOException e) {
+				e.printStackTrace();
+				break;
+			}
+			reader.align(4);
+			curIdx = reader.getPointerIndex();
+		}
+		reader.setPointerIndex(ffEnd);
+	}
+	
 	public EFIFirmwareFile(BinaryReader reader) throws IOException {
 		basePointer = reader.getPointerIndex();
+		sections = new ArrayList<>();
 		
 		// header
 		name = EFIGUIDs.bytesToGUIDString(
@@ -148,23 +183,16 @@ public class EFIFirmwareFile {
 		
 		parseHeader(reader);
 		
-		int dataLen = 0;
-		if (isHeader2()) {
-			dataLen = (int) (extendedSize - EFI_FF_HEADER_EXT_LEN);
-		} else {
-			dataLen = size - EFI_FF_HEADER_LEN;
-		}
-		if (dataLen > 0) {
-			fileData = reader.readNextByteArray(dataLen);
-			checkFileChecksum();
-		}
+		readFileSections(reader);
 	}
 	
 	public EFIFirmwareFile(Memory memory, ProgramFragment fragment) throws IOException {
 		// A program fragment that represents a UEFI file should have only one 
 		// address space starting at the base of the file.
 		this(new BinaryReader(new MemoryByteProvider(
-				memory, fragment.getFirstRange().getAddressSpace()), true));
+				memory, fragment.getFirstRange().getAddressSpace()), 
+				GhidraLittleEndianDataConverter.INSTANCE, 
+				fragment.getMinAddress().getOffset()));
 	}
 	
 	public long getBasePointer() {
@@ -201,5 +229,9 @@ public class EFIFirmwareFile {
 	
 	public byte getType() {
 		return type;
+	}
+	
+	public List<EFIFirmwareSection> getSections() {
+		return sections;
 	}
 }
