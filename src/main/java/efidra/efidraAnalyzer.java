@@ -30,6 +30,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+import ghidra.app.analyzers.PortableExecutableAnalyzer;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.bin.BinaryReader;
@@ -45,9 +46,15 @@ import ghidra.program.model.data.DWordDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.Integer3DataType;
+import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.LongDataType;
 import ghidra.program.model.data.QWordDataType;
+import ghidra.program.model.data.ShortDataType;
 import ghidra.program.model.data.StringDataType;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.UnsignedIntegerDataType;
+import ghidra.program.model.data.UnsignedLongDataType;
+import ghidra.program.model.data.UnsignedShortDataType;
 import ghidra.program.model.data.WordDataType;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Group;
@@ -66,6 +73,9 @@ import ghidra.util.task.TaskMonitor;
  */
 public class efidraAnalyzer extends AbstractAnalyzer {
 	private static final DataType BYTE = ByteDataType.dataType;
+	private static final DataType USHORT = UnsignedShortDataType.dataType;
+	private static final DataType UINT = UnsignedIntegerDataType.dataType;
+	private static final DataType ULONG = UnsignedLongDataType.dataType;
 	private static final DataType WORD = WordDataType.dataType;
 	private static final DataType DWORD = DWordDataType.dataType;
 	private static final DataType QWORD = QWordDataType.dataType;
@@ -237,16 +247,16 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	private void initStructures(Program program) {
 		DataTypeManager dtm = program.getDataTypeManager();
 		GUID_STRUCT = new StructureDataType(LABEL_EFI_GUID, 0, dtm);
-		GUID_STRUCT.add(DWORD, "Data1", null);
-		GUID_STRUCT.add(WORD, "Data2", null);
-		GUID_STRUCT.add(WORD, "Data3", null);
+		GUID_STRUCT.add(UINT, "Data1", null);
+		GUID_STRUCT.add(USHORT, "Data2", null);
+		GUID_STRUCT.add(USHORT, "Data3", null);
 		GUID_STRUCT.add(new ArrayDataType(BYTE, EFIGUIDs.EFI_GUID_DATA4_LEN, 
 				BYTE.getLength()), "Data4", null);
 		
 		BLOCK_MAP_ENTRY_STRUCT = new StructureDataType(LABEL_EFI_FV_BLOCK_MAP_ENTRY, 0, dtm);
-		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "NumBlocks", 
+		BLOCK_MAP_ENTRY_STRUCT.add(UINT, "NumBlocks", 
 				"The number of sequential blocks which are of the same size.");
-		BLOCK_MAP_ENTRY_STRUCT.add(DWORD, "Length",
+		BLOCK_MAP_ENTRY_STRUCT.add(UINT, "Length",
 				"The size of the blocks.");
 		
 		VOLUME_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FIRMWARE_VOLUME_HEADER, 0, dtm);
@@ -332,5 +342,14 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		
 		
 		return true;
+	}
+	
+	public void analyzeExecutables(Program program, TaskMonitor monitor, MessageLog log) 
+			throws CancelledException {
+		
+		PortableExecutableAnalyzer a = new PortableExecutableAnalyzer();
+		for (;;) {
+			a.added(program, null, monitor, log);
+		}
 	}
 }

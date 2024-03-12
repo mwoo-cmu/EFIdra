@@ -1,20 +1,127 @@
 {
 	"parser": {
+		"name": "PiFirmware",
+		"layout": [
+			{
+				"offset": 0,
+				"type": "uint",
+				"value": 0,
+				"name": "InitialPadding",
+				"movePtr": -16
+			},
+			{
+				"offset": 0,
+				"type": "efidra_layout",
+				"value": [
+					{
+						"offset": 0,
+						"name": "FVHeader",
+						"type": "EFI_FIRMWARE_VOLUME_HEADER",
+						"value": {
+							"ZeroVector": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+							"Signature": "_FVH",
+							"Reserved": 0,
+							"Revision": 2
+						},
+						"alignment": 8,
+						"count": 1,
+						"setPtr": "this.base + this.HeaderLength"
+					},
+					{
+						"condition": "FVHeader.ExtHeaderOffset > 0",
+						"offset": "FVHeader.ExtHeaderOffset - FVHeader.HeaderLength",
+						"name": "FVExtHeader",
+						"type": "EFI_FIRMWARE_VOLUME_EXT_HEADER",
+						"count": 1,
+						"setPtr": "FVHeader.base + FVHeader.HeaderLength"
+					},
+					{
+						"offset": 0,
+						"type": "uint",
+						"value": 65535,
+						"name": "VolumeFreeSpace",
+						"count": "unknown"
+					},
+					{
+						"condition": "ptr <",
+						"offset": 0,
+						"name": "FFHeader",
+						"type": [
+							{
+								"type": "EFI_FFS_FILE_HEADER2",
+								"condition": "this.Attributes & 1 == 1"
+							},
+							{
+								"type": "EFI_FFS_FILE_HEADER",
+								"condition": true
+							}
+						]
+					}
+				]
+			}
+		]
 	},
 	"structures": [
+		{
+			"name": "EFI_FV_FILETYPE",
+			"enum": {
+				"EFI_FV_FILETYPE_ALL": 0,
+				"EFI_FV_FILETYPE_RAW": 1,
+				"EFI_FV_FILETYPE_FREEFORM": 2,	
+				"EFI_FV_FILETYPE_SECURITY_CORE": 3,
+				"EFI_FV_FILETYPE_PEI_CORE": 4,
+				"EFI_FV_FILETYPE_DXE_CORE": 5,
+				"EFI_FV_FILETYPE_PEIM": 6,
+				"EFI_FV_FILETYPE_DRIVER": 7,
+				"EFI_FV_FILETYPE_COMBINED_PEIM_DRIVER": 8,
+				"EFI_FV_FILETYPE_APPLICATION": 9,
+				"EFI_FV_FILETYPE_MM": 10,
+				"EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE": 11,
+				"EFI_FV_FILETYPE_COMBINED_MM_DXE": 12,
+				"EFI_FV_FILETYPE_MM_CORE": 13,
+				"EFI_FV_FILETYPE_MM_STANDALONE": 14,
+				"EFI_FV_FILETYPE_MM_CORE_STANDALONE": 15,
+				"EFI_FV_FILETYPE_OEM_MIN": 192,
+				"EFI_FV_FILETYPE_OEM_MAX": 223,
+				"EFI_FV_FILETYPE_DEBUG_MIN": 224,
+				"EFI_FV_FILETYPE_DEBUG_MAX": 239,
+				"EFI_FV_FILETYPE_FFS_PAD": 240,
+				"EFI_FV_FILETYPE_FFS_MAX": 255
+			}
+		},
+		{
+			"name": "EFI_SECTION_TYPE",
+			"enum": {
+				"EFI_SECTION_ALL": 0,
+				"EFI_SECTION_COMPRESSION": 1,
+				"EFI_SECTION_GUID_DEFINED": 2,
+				"EFI_SECTION_PE32": 16,
+				"EFI_SECTION_PIC": 17,
+				"EFI_SECTION_TE": 18,
+				"EFI_SECTION_DXE_DEPEX": 19,
+				"EFI_SECTION_VERSION": 20,
+				"EFI_SECTION_USER_INTERFACE": 21,
+				"EFI_SECTION_COMPATIBILITY16": 22,
+				"EFI_SECTION_FIRMWARE_VOLUME_IMAGE": 23,
+				"EFI_SECTION_FREEFORM_SUBTYPE_GUID": 24,
+				"EFI_SECTION_RAW": 25,
+				"EFI_SECTION_PEI_DEPEX": 27,
+				"EFI_SECTION_MM_DEPEX": 28
+			}
+		},
 		{
 			"name": "EFI_GUID",
 			"members": [
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "Data1"
 				},
 				{
-					"type": "word",
+					"type": "ushort",
 					"name": "Data2"
 				},
 				{
-					"type": "word",
+					"type": "ushort",
 					"name": "Data3"
 				},
 				{
@@ -27,12 +134,12 @@
 			"name": "EFI_FV_BLOCK_MAP_ENTRY",
 			"members": [
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "NumBlocks",
 					"comment": "The number of sequential blocks which are of the same size."
 				},
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "Length",
 					"comment": "The size of the blocks."
 				}
@@ -52,7 +159,7 @@
 					"comment": "Declares the file system with which the firmware volume is formatted."
 				},
 				{
-					"type": "qword",
+					"type": "ulonglong",
 					"name": "FvLength",
 					"comment": "Length in bytes of the complete firmware volume, including the header."
 				},
@@ -63,22 +170,22 @@
 					"comment": "Set to EFI_FVH_SIGNATURE"
 				},
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "Attributes",
 					"comment": "Declares capabilities and power-on defaults for the firmware volume."
 				},
 				{
-					"type": "word",
+					"type": "ushort",
 					"name": "HeaderLength",
 					"comment": "Length in bytes of the complete firmware volume header"
 				},
 				{
-					"type": "word",
+					"type": "ushort",
 					"name": "Checksum",
 					"comment": "A 16-bit checksum of the firmware volume header. A valid header sums to zero."
 				},
 				{
-					"type": "word",
+					"type": "ushort",
 					"name": "ExtHeaderOffset",
 					"comment": "Offset, relative to the start of the header, of the extended header\n(EFI_FIRMWARE_VOLUME_EXT_HEADER) or zero if there is no extended header."
 				},
@@ -88,7 +195,7 @@
 					"comment": "This field must always be set to zero."
 				},
 				{
-					"type": "word",
+					"type": "ushort",
 					"name": "Revision",
 					"comment": "Set to 2. Future versions of this specification may define new header fields and will\nincrement the Revision field accordingly."
 				},
@@ -108,7 +215,7 @@
 					"comment": "Firmware volume name."
 				},
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "ExtHeaderSize",
 					"comment": "Size of the rest of the extension header, including this structure."
 				}
@@ -144,7 +251,7 @@
 					"comment": "Used to verify the integrity of the file."
 				},
 				{
-					"type": "byte",
+					"type": "EFI_FV_FILETYPE",
 					"name": "Type",
 					"comment": "Identifies the type of file."
 				},
@@ -154,7 +261,7 @@
 					"comment": "Declares various file attribute bits."
 				},
 				{
-					"type": "int3",
+					"type": "uint3",
 					"name": "Size",
 					"comment": "The length of the file in bytes, including the FFS header."
 				},
@@ -174,7 +281,7 @@
 					"comment": "In edk2, this is defined as a separate structure with the same fields. Here a nested structure is used for simplicity."
 				},
 				{
-					"type": "qword",
+					"type": "ulonglong",
 					"name": "ExtendedSize",
 					"comment": "If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\nIf FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used."
 				}
@@ -184,12 +291,12 @@
 			"name": "EFI_COMMON_SECTION_HEADER",
 			"members": [
 				{
-					"type": "int3",
+					"type": "uint3",
 					"name": "Size",
 					"comment": "A 24-bit unsigned integer that contains the total size of the section in bytes,\nincluding the EFI_COMMON_SECTION_HEADER."
 				},
 				{
-					"type": "byte",
+					"type": "EFI_SECTION_TYPE",
 					"name": "Type",
 					"comment": "Declares the section type."
 				}
@@ -204,7 +311,7 @@
 					"comment": "In edk2, this is defined as a separate structure with the same fields. Here a nested structure is used for simplicity."
 				},
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "ExtendedSize",
 					"comment": "If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\nSize is not equal to 0xFFFFFF, then this field does not exist."
 				}
@@ -219,7 +326,7 @@
 					"comment": "Usual common section header. CommonHeader.Type = EFI_SECTION_COMPRESSION."
 				},
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "UncompressedLength",
 					"comment": "The UINT32 that indicates the size of the section data after decompression."
 				},
@@ -239,7 +346,7 @@
 					"comment": "Usual common section header. CommonHeader.Type = EFI_SECTION_COMPRESSION."
 				},
 				{
-					"type": "dword",
+					"type": "uint",
 					"name": "UncompressedLength",
 					"comment": "The UINT32 that indicates the size of the section data after decompression."
 				},
@@ -247,6 +354,160 @@
 					"type": "byte",
 					"name": "CompressionType",
 					"comment": "Indicates which compression algorithm is used."
+				}
+			]
+		},
+		{
+			"name": "EFI_FREEFORM_SUBTYPE_GUID_SECTION",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER",
+					"name": "CommonHeader",
+					"comment": "Common section header. CommonHeader.Type = EFI_SECTION_FREEFORM_SUBTYPE_GUID."
+				},
+				{
+					"type": "EFI_GUID",
+					"name": "SubTypeGuid",
+					"comment": "This GUID is defined by the creator of the file. It is a vendor-defined file type."
+				}
+			]
+		},
+		{
+			"name": "EFI_FREEFORM_SUBTYPE_GUID_SECTION2",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER2",
+					"name": "CommonHeader",
+					"comment": "Common section header. CommonHeader.Type = EFI_SECTION_FREEFORM_SUBTYPE_GUID."
+				},
+				{
+					"type": "EFI_GUID",
+					"name": "SubTypeGuid",
+					"comment": "This GUID is defined by the creator of the file. It is a vendor-defined file type."
+				}
+			]
+		},
+		{
+			"name": "EFI_GUID_DEFINED_SECTION",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER",
+					"name": "CommonHeader",
+					"comment": "The common section header. CommonHeader.Type = EFI_SECTION_GUID_DEFINED."
+				},
+				{
+					"type": "EFI_GUID",
+					"name": "SectionDefinitionGuid",
+					"comment": "The GUID that defines the format of the data that follows. It is a vendor-defined section type."
+				},
+				{
+					"type": "ushort",
+					"name": "DataOffset",
+					"comment": "Contains the offset in bytes from the beginning of the common header to the first byte of the data."
+				},
+				{
+					"type": "ushort",
+					"name": "Attributes",
+					"comment": "The bit field that declares some specific characteristics of the section contents."
+				}
+			]
+		},
+		{
+			"name": "EFI_GUID_DEFINED_SECTION2",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER2",
+					"name": "CommonHeader",
+					"comment": "The common section header. CommonHeader.Type = EFI_SECTION_GUID_DEFINED."
+				},
+				{
+					"type": "EFI_GUID",
+					"name": "SectionDefinitionGuid",
+					"comment": "The GUID that defines the format of the data that follows. It is a vendor-defined section type."
+				},
+				{
+					"type": "ushort",
+					"name": "DataOffset",
+					"comment": "Contains the offset in bytes from the beginning of the common header to the first byte of the data."
+				},
+				{
+					"type": "ushort",
+					"name": "Attributes",
+					"comment": "The bit field that declares some specific characteristics of the section contents."
+				}
+			]
+		},
+		{
+			"name": "EFI_USER_INTERFACE_SECTION",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER",
+					"name": "CommonHeader",
+					"comment": "The common section header. CommonHeader.Type = EFI_SECTION_USER_INTERFACE."
+				},
+				{
+					"type": "TerminatedUnicode",
+					"name": "FileNameString",
+					"size": 1,
+					"comment": "Array of unicode string."
+				}
+			]
+		},
+		{
+			"name": "EFI_USER_INTERFACE_SECTION2",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER2",
+					"name": "CommonHeader",
+					"comment": "The common section header. CommonHeader.Type = EFI_SECTION_USER_INTERFACE."
+				},
+				{
+					"type": "TerminatedUnicode",
+					"name": "FileNameString",
+					"size": 1,
+					"comment": "Array of unicode string."
+				}
+			]
+		},
+		{
+			"name": "EFI_VERSION_SECTION",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER",
+					"name": "CommonHeader",
+					"comment": "The common section header. CommonHeader.Type = EFI_SECTION_VERSION."
+				},
+				{
+					"type": "ushort",
+					"name": "BuildNumber",
+					"comment": "A UINT16 that represents a particular build. Subsequent builds have monotonically\nincreasing build numbers relative to earlier builds."
+				},
+				{
+					"type": "TerminatedUnicode",
+					"name": "VersionString",
+					"size": 1,
+					"comment": "Array of unicode string."
+				}
+			]
+		},
+		{
+			"name": "EFI_VERSION_SECTION2",
+			"members": [
+				{
+					"type": "EFI_COMMON_SECTION_HEADER2",
+					"name": "CommonHeader",
+					"comment": "The common section header. CommonHeader.Type = EFI_SECTION_VERSION."
+				},
+				{
+					"type": "ushort",
+					"name": "BuildNumber",
+					"comment": "A UINT16 that represents a particular build. Subsequent builds have monotonically\nincreasing build numbers relative to earlier builds."
+				},
+				{
+					"type": "TerminatedUnicode",
+					"name": "VersionString",
+					"size": 1,
+					"comment": "Array of unicode string."
 				}
 			]
 		}

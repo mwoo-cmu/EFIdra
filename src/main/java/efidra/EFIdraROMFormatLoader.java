@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 
@@ -18,8 +19,10 @@ import org.json.simple.parser.ParseException;
 import ghidra.framework.Application;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.BuiltInDataTypeManager;
+import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Undefined;
 import ghidra.program.model.listing.Program;
@@ -91,7 +94,12 @@ public class EFIdraROMFormatLoader {
 					dType = loadedDataType;
 				}
 			}
-			sdt.add(dType, size, (String) member.get("name"), (String) member.get("comment"));	
+			if (size > 0) {
+				sdt.add(dType, size, (String) member.get("name"), 
+						(String) member.get("comment"));
+			} else {
+				sdt.add(dType, (String) member.get("name"), (String) member.get("comment"));				
+			}
 		}
 		return sdt;
 	}
@@ -99,6 +107,28 @@ public class EFIdraROMFormatLoader {
 	public static DataType parseDataType(String name, JSONArray members) {
 		return parseDataType(name, members, null);
 	}
+	
+	public static EnumDataType parseEnumType(String name, JSONObject enumMembers, DataTypeManager dtm) {
+		// determine how many bytes are needed to hold all enum values
+		long maxVal = (long) Collections.max(enumMembers.values());
+		int nBytes = 1;
+		// ghidra's EnumDataType takes 1, 2, 4, or 8 bytes
+		for (; nBytes <= 8; nBytes *= 2) {
+			long byteMax = 1 << (nBytes * 8);
+			if (byteMax >= maxVal) {
+				break;
+			}
+		}
+		EnumDataType edt = new EnumDataType(CategoryPath.ROOT, name, nBytes, dtm);
+		for (Object key : enumMembers.keySet()) {
+			edt.add((String) key, (long) enumMembers.get(key));
+		}
+		return edt;
+	}
+	
+	public static EnumDataType parseEnumType(String name, JSONObject enumMembers) {
+		return parseEnumType(name, enumMembers, null);
+	}	
 	
 	public static void loadROMFormats(Program program) {
 		DataTypeManager dtm = program.getDataTypeManager();
@@ -112,11 +142,21 @@ public class EFIdraROMFormatLoader {
 							JSONObject struct = (JSONObject) structObj;
 							String name = (String) struct.get("name");
 							JSONArray members = (JSONArray) struct.get("members");
-							if (dataTypes.containsKey(name)) {
-								Msg.info(null, "Duplicate structure name " + name
-										+ ". Second occurrence in " + file.getName());
+							if (members != null) {
+								if (dataTypes.containsKey(name)) {
+									Msg.info(null, "Duplicate structure name " + name
+											+ ". Second occurrence in " + file.getName());
+								}
+								dataTypes.put(name, parseDataType(name, members, dtm));
 							}
-							dataTypes.put(name, parseDataType(name, members, dtm));
+							JSONObject enumMembers = (JSONObject) struct.get("enum");
+							if (enumMembers != null) {
+								if (dataTypes.containsKey(name)) {
+									Msg.info(null, "Duplicate structure name " + name
+											+ ". Second occurrence in " + file.getName());									
+								}
+								dataTypes.put(name, parseEnumType(name, enumMembers, dtm));
+							}
 						}
 					} else {
 						Msg.info(null, "No structures found in " + file.getName());
@@ -137,7 +177,7 @@ public class EFIdraROMFormatLoader {
 			}
 		}
 	}
-	
+
 	public static DataType getType(String typeName) {
 		return dataTypes.get(typeName);
 	}
