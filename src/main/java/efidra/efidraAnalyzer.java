@@ -20,7 +20,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.HashMap;
 
 import javax.swing.JPanel;
@@ -30,10 +32,16 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+import generic.jar.ResourceFile;
 import ghidra.app.analyzers.PortableExecutableAnalyzer;
+import ghidra.app.script.GhidraScript;
+import ghidra.app.script.GhidraScriptLoadException;
+import ghidra.app.script.GhidraScriptUtil;
+import ghidra.app.script.JavaScriptProvider;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.bin.BinaryReader;
+import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.MemoryByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.Application;
@@ -80,14 +88,14 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	private static final DataType DWORD = DWordDataType.dataType;
 	private static final DataType QWORD = QWordDataType.dataType;
 	
-	private StructureDataType GUID_STRUCT;
-	private StructureDataType BLOCK_MAP_ENTRY_STRUCT;
-	private StructureDataType VOLUME_HEADER_STRUCT;
-	private StructureDataType EFI_FFS_INTEGRITY_CHECK;
-	private StructureDataType FILE_HEADER_STRUCT;
-	private StructureDataType FILE_HEADER2_STRUCT;
-	private StructureDataType SECTION_HEADER_STRUCT;
-	private StructureDataType SECTION_HEADER2_STRUCT;
+//	private StructureDataType GUID_STRUCT;
+//	private StructureDataType BLOCK_MAP_ENTRY_STRUCT;
+//	private StructureDataType VOLUME_HEADER_STRUCT;
+//	private StructureDataType EFI_FFS_INTEGRITY_CHECK;
+//	private StructureDataType FILE_HEADER_STRUCT;
+//	private StructureDataType FILE_HEADER2_STRUCT;
+//	private StructureDataType SECTION_HEADER_STRUCT;
+//	private StructureDataType SECTION_HEADER2_STRUCT;
 	
 	public static final String LABEL_EFI_GUID = "EFI_GUID";
 	public static final String LABEL_EFI_FV_BLOCK_MAP_ENTRY = "EFI_FV_BLOCK_MAP_ENTRY";
@@ -145,7 +153,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 			try {
 				Address vhBase = programFragment.getMinAddress();
 				String checksum = listing.getComment(CodeUnit.PRE_COMMENT, vhBase);
-				listing.createData(vhBase, VOLUME_HEADER_STRUCT);
+				listing.createData(vhBase, EFIdraROMFormatLoader.getType("EFI_FIRMWARE_VOLUME_HEADER"));
+//				listing.createData(vhBase, VOLUME_HEADER_STRUCT);
 				StringBuilder volHeaderSb = new StringBuilder();
 				EFIFirmwareVolume fragVolHeader = new EFIFirmwareVolume(memory, programFragment);
 				String fvGUID = fragVolHeader.getNameGUID();
@@ -172,10 +181,10 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				String checksum = listing.getComment(CodeUnit.PRE_COMMENT, fhBase);
 				String comment = programFragment.getComment();
 				if (LABEL_EFI_FFS_FILE_HEADER.equals(comment)) {
-					listing.createData(fhBase, FILE_HEADER_STRUCT);
+					listing.createData(fhBase, EFIdraROMFormatLoader.getType("EFI_FFS_FILE_HEADER"));
 					programFragment.setComment("");
 				} else if (LABEL_EFI_FFS_FILE_HEADER2.equals(comment)) {
-					listing.createData(fhBase, FILE_HEADER2_STRUCT);
+					listing.createData(fhBase, EFIdraROMFormatLoader.getType("EFI_FFS_FILE_HEADER2"));
 					programFragment.setComment("");
 				} else {
 					return;
@@ -194,7 +203,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				for (EFIFirmwareSection fragSec : fragFile.getSections()) {
 					listing.createData(programBase.add(fragSec.getBasePointer()), 
 							fragSec.getHeaderSize() == EFIFirmwareSection.EFI_SECTION_HEADER_SIZE ? 
-									SECTION_HEADER_STRUCT : SECTION_HEADER2_STRUCT);
+									EFIdraROMFormatLoader.getType("EFI_COMMON_SECTION_HEADER") : 
+										EFIdraROMFormatLoader.getType("EFI_COMMON_SECTION_HEADER2"));
 				}
 			} catch (CodeUnitInsertionException e) {
 				// TODO Auto-generated catch block
@@ -245,83 +255,36 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	}
 	
 	private void initStructures(Program program) {
-		DataTypeManager dtm = program.getDataTypeManager();
-		GUID_STRUCT = new StructureDataType(LABEL_EFI_GUID, 0, dtm);
-		GUID_STRUCT.add(UINT, "Data1", null);
-		GUID_STRUCT.add(USHORT, "Data2", null);
-		GUID_STRUCT.add(USHORT, "Data3", null);
-		GUID_STRUCT.add(new ArrayDataType(BYTE, EFIGUIDs.EFI_GUID_DATA4_LEN, 
-				BYTE.getLength()), "Data4", null);
-		
-		BLOCK_MAP_ENTRY_STRUCT = new StructureDataType(LABEL_EFI_FV_BLOCK_MAP_ENTRY, 0, dtm);
-		BLOCK_MAP_ENTRY_STRUCT.add(UINT, "NumBlocks", 
-				"The number of sequential blocks which are of the same size.");
-		BLOCK_MAP_ENTRY_STRUCT.add(UINT, "Length",
-				"The size of the blocks.");
-		
-		VOLUME_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FIRMWARE_VOLUME_HEADER, 0, dtm);
-		VOLUME_HEADER_STRUCT.add(new ArrayDataType(BYTE, EFIFirmwareVolume.ZERO_VECTOR_LEN, 
-				BYTE.getLength()), "ZeroVector", 
-				"The first 16 bytes are reserved to allow for the reset vector of\n"
-				+ "	processors whose reset vector is at address 0.");
-		VOLUME_HEADER_STRUCT.add(GUID_STRUCT, "FileSystemGuid", 
-				"Declares the file system with which the firmware volume is formatted.");
-		VOLUME_HEADER_STRUCT.add(QWORD, "FvLength", 
-				"Length in bytes of the complete firmware volume, including the header.");
-		VOLUME_HEADER_STRUCT.add(StringDataType.dataType, 4, "Signature",
-				"Set to EFI_FVH_SIGNATURE");
-		VOLUME_HEADER_STRUCT.add(DWORD, "Attributes",
-				"Declares capabilities and power-on defaults for the firmware volume.");
-		VOLUME_HEADER_STRUCT.add(WORD, "HeaderLength",
-				"Length in bytes of the complete firmware volume header.");
-		VOLUME_HEADER_STRUCT.add(WORD, "Checksum",
-				"A 16-bit checksum of the firmware volume header. A valid header sums to zero.");
-		VOLUME_HEADER_STRUCT.add(WORD, "ExtHeaderOffset", 
-				"Offset, relative to the start of the header, of the extended header\n"
-				+ "(EFI_FIRMWARE_VOLUME_EXT_HEADER) or zero if there is no extended header.");
-		VOLUME_HEADER_STRUCT.add(BYTE, "Reserved",
-				"This field must always be set to zero.");
-		VOLUME_HEADER_STRUCT.add(WORD, "Revision",
-				"Set to 2. Future versions of this specification may define new header fields and will\n"
-				+ "increment the Revision field accordingly.");
-		VOLUME_HEADER_STRUCT.add(BLOCK_MAP_ENTRY_STRUCT, "BlockMap",
-				"An array of run-length encoded FvBlockMapEntry structures. The array is\n"
-				+ "terminated with an entry of {0,0}.");
-		
-		EFI_FFS_INTEGRITY_CHECK = new StructureDataType(LABEL_EFI_FFS_INTEGRITY_CHECK, 0, dtm);
-		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "Header", "8-bit checksum of the file header");
-		EFI_FFS_INTEGRITY_CHECK.add(BYTE, "File", "8-bit checksum of the file contents");
-		
-		FILE_HEADER_STRUCT = new StructureDataType(LABEL_EFI_FFS_FILE_HEADER, 0, dtm);
-		FILE_HEADER_STRUCT.add(GUID_STRUCT, "Name", 
-				"This GUID is the file name. It is used to uniquely identify the file.");
-		FILE_HEADER_STRUCT.add(EFI_FFS_INTEGRITY_CHECK, "IntegrityCheck", 
-				"Used to verify the integrity of the file.");
-		FILE_HEADER_STRUCT.add(BYTE, "Type", "Identifies the type of file.");
-		FILE_HEADER_STRUCT.add(BYTE, "Attributes", "Declares various file attribute bits.");
-		FILE_HEADER_STRUCT.add(Integer3DataType.dataType, EFIFirmwareFile.EFI_FF_SIZE_LEN, "Size",
-				"The length of the file in bytes, including the FFS header.");
-		FILE_HEADER_STRUCT.add(BYTE, "State", 
-				"Used to track the state of the file throughout the life of the file from creation to deletion.");
-		
-		FILE_HEADER2_STRUCT = (StructureDataType) FILE_HEADER_STRUCT.copy(dtm);
-		FILE_HEADER2_STRUCT.add(QWORD, "ExtendedSize", 
-				"If FFS_ATTRIB_LARGE_FILE is set in Attributes, then ExtendedSize exists and Size must be set to zero.\n"
-				+ "If FFS_ATTRIB_LARGE_FILE is not set then EFI_FFS_FILE_HEADER is used.");
-		
-		SECTION_HEADER_STRUCT = new StructureDataType(LABEL_EFI_COMMON_SECTION_HEADER, 0, dtm);
-		SECTION_HEADER_STRUCT.add(Integer3DataType.dataType, "Size", 
-				"A 24-bit unsigned integer that contains the total size of the section in bytes,\n"
-				+ "including the EFI_COMMON_SECTION_HEADER.");
-		SECTION_HEADER_STRUCT.add(BYTE, "Type", "Declares the section type.");
-
-		SECTION_HEADER2_STRUCT = (StructureDataType) SECTION_HEADER_STRUCT.copy(dtm);
-		SECTION_HEADER2_STRUCT.add(DWORD, "ExtendedSize", 
-				"If Size is 0xFFFFFF, then ExtendedSize contains the size of the section. If\n"
-				+ "Size is not equal to 0xFFFFFF, then this field does not exist.");
-		
 		EFIdraROMFormatLoader.init(program);
 	}
+	
+//	private void findFirmwareVolumes(ByteProvider provider) throws IOException {
+//		// all UEFI images are little endian
+//		BinaryReader reader = new BinaryReader(provider, true);
+//		long fileLen = provider.length();
+//		long curIdx = 0;
+//		volumes = new ArrayList<>();
+//		paddingOffset = 0;
+//		while (curIdx < fileLen) {
+//			int next = reader.readNextInt();
+//			if (paddingOffset == 0 && next != 0) {
+//				// find the start of the ROM excluding all the padding at the beginning
+//				// need to offset by the int read and the size of the zero vector
+//				paddingOffset = reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.ZERO_VECTOR_LEN;
+//			}
+//			if (next == EFIFirmwareVolume.EFI_FVH_SIGNATURE) {
+//				reader.setPointerIndex(reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.EFI_SIG_OFFSET);
+//				// after this call, reader will be pointed at the end of the 
+//				// last firmware volume, so next header will be the next fv
+//				volumes.add(new EFIFirmwareVolume(reader));
+//			}
+//			curIdx = reader.getPointerIndex();
+//		}
+//		// in case malformed volumes have read too far
+//		reader.setPointerIndex(fileLen);
+//	}
+	
+//	private GhidraScript get
 	
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
@@ -338,7 +301,30 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		Memory memory = program.getMemory();
 		
 		// create data objects for the headers of files and volumes
-		addStructuresRecursive(rootModule, listing, memory);
+//		addStructuresRecursive(rootModule, listing, memory);
+		
+		// probably try to give options to select the parser, along with an "all" option
+		// "all" tries everything until one works without error?
+		
+		ResourceFile scriptFile = GhidraScriptUtil.findScriptByName("PiFirmwareParser.java");
+		if (scriptFile == null) {
+			try {
+				scriptFile = Application.getModuleDataFile(
+						EFIdraROMFormatLoader.EFI_ROM_FORMATS_DIR + "/" + "PiFirmwareParser.java");
+			} catch (FileNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		PrintWriter writer = new PrintWriter(System.out);
+		try {
+			GhidraScript script = GhidraScriptUtil.getProvider(scriptFile).getScriptInstance(scriptFile, writer);
+			EFIdraParserScript eScript = (EFIdraParserScript) script;
+			eScript.parseROM(program);
+		} catch (GhidraScriptLoadException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} 
 		
 		
 		return true;

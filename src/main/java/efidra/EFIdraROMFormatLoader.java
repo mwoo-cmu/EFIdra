@@ -29,7 +29,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
 public class EFIdraROMFormatLoader {
-	private static final String EFI_ROM_FORMATS_DIR = "rom_formats";
+	public static final String EFI_ROM_FORMATS_DIR = "rom_formats";
 	private static final char ARRAY_OPEN = '[';
 	private static final char ARRAY_CLOSE = ']';
 	
@@ -130,49 +130,57 @@ public class EFIdraROMFormatLoader {
 		return parseEnumType(name, enumMembers, null);
 	}	
 	
+	private static void loadJSON(File file, DataTypeManager dtm) {
+		try {
+			JSONObject format = (JSONObject) (new JSONParser().parse(new FileReader(file)));
+			JSONArray structures = (JSONArray) format.get("structures");
+			if (structures != null) {
+				for (Object structObj : structures) {
+					JSONObject struct = (JSONObject) structObj;
+					String name = (String) struct.get("name");
+					JSONArray members = (JSONArray) struct.get("members");
+					if (members != null) {
+						if (dataTypes.containsKey(name)) {
+							Msg.info(null, "Duplicate structure name " + name
+									+ ". Second occurrence in " + file.getName());
+						}
+						dataTypes.put(name, parseDataType(name, members, dtm));
+					}
+					JSONObject enumMembers = (JSONObject) struct.get("enum");
+					if (enumMembers != null) {
+						if (dataTypes.containsKey(name)) {
+							Msg.info(null, "Duplicate structure name " + name
+									+ ". Second occurrence in " + file.getName());									
+						}
+						dataTypes.put(name, parseEnumType(name, enumMembers, dtm));
+					}
+				}
+			} else {
+				Msg.info(null, "No structures found in " + file.getName());
+			}
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			JPanel panel = new JPanel(new BorderLayout());
+			Msg.showError(null, panel, "EFIdra Analyzer", 
+					"Error parsing format JSON from " + file.getName());
+		}
+	}
+	
 	public static void loadROMFormats(Program program) {
 		DataTypeManager dtm = program.getDataTypeManager();
 		for (File file : formatsDir.listFiles()) {
 			if (file.isFile()) {
-				try {
-					JSONObject format = (JSONObject) (new JSONParser().parse(new FileReader(file)));
-					JSONArray structures = (JSONArray) format.get("structures");
-					if (structures != null) {
-						for (Object structObj : structures) {
-							JSONObject struct = (JSONObject) structObj;
-							String name = (String) struct.get("name");
-							JSONArray members = (JSONArray) struct.get("members");
-							if (members != null) {
-								if (dataTypes.containsKey(name)) {
-									Msg.info(null, "Duplicate structure name " + name
-											+ ". Second occurrence in " + file.getName());
-								}
-								dataTypes.put(name, parseDataType(name, members, dtm));
-							}
-							JSONObject enumMembers = (JSONObject) struct.get("enum");
-							if (enumMembers != null) {
-								if (dataTypes.containsKey(name)) {
-									Msg.info(null, "Duplicate structure name " + name
-											+ ". Second occurrence in " + file.getName());									
-								}
-								dataTypes.put(name, parseEnumType(name, enumMembers, dtm));
-							}
-						}
-					} else {
-						Msg.info(null, "No structures found in " + file.getName());
-					}
-				} catch (FileNotFoundException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (ParseException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-					JPanel panel = new JPanel(new BorderLayout());
-					Msg.showError(null, panel, "EFIdra Analyzer", 
-							"Error parsing format JSON from " + file.getName());
+				if (file.getName().endsWith(".json")) {
+					loadJSON(file, dtm);
+				} else if (file.getName().endsWith(".java")) {
+					
 				}
 			}
 		}

@@ -103,7 +103,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		
 		return loadSpecs;
 	}
-
+	
 	private void findFirmwareVolumes(ByteProvider provider) throws IOException {
 		// all UEFI images are little endian
 		BinaryReader reader = new BinaryReader(provider, true);
@@ -130,19 +130,33 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		reader.setPointerIndex(fileLen);
 	}
 	
+	private void skipPadding(ByteProvider provider, long keep) throws IOException {
+		BinaryReader reader = new BinaryReader(provider, true);
+		long fileLen = provider.length();
+		long curIdx = 0;
+		volumes = new ArrayList<>();
+		paddingOffset = 0;
+		while (curIdx < fileLen) {
+			int next = reader.readNextInt();
+			if (paddingOffset == 0 && next != 0) {
+				// find the start of the ROM excluding all the padding at the beginning
+				// need to offset by the int read and the size of the zero vector
+				paddingOffset = reader.getPointerIndex() - BinaryReader.SIZEOF_INT - keep;
+				break;
+			}
+			curIdx = reader.getPointerIndex();
+		}
+	}
+	
 	@Override
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
 			Program program, TaskMonitor monitor, MessageLog log)
 			throws CancelledException, IOException {
-		Address progBase = program.getImageBase();
-		findFirmwareVolumes(provider);
 		Memory memory = program.getMemory();
-		
-		Listing listing = program.getListing();
-		ProgramModule rootModule = listing.getDefaultRootModule();
+		Address progBase = program.getImageBase();
 		try {
-			memory.createInitializedBlock("Unassigned and Padding", progBase.add(paddingOffset), 
-					provider.getInputStream(paddingOffset), provider.length() - paddingOffset + 1,
+			memory.createInitializedBlock("Unassigned and Padding", progBase, 
+					provider.getInputStream(paddingOffset), provider.length() + 1,
 					monitor, false);
 		} catch (LockException e) {
 			// TODO Auto-generated catch block
@@ -164,62 +178,92 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			e.printStackTrace();
 		}
 		
-		// label all of the volumes we've found
-		EFIGUIDs guids = new EFIGUIDs();
-		for (EFIFirmwareVolume volume : volumes) {
-			try {
-				ProgramModule volumeModule = rootModule.createModule(
-						guids.getReadableName(
-								volume.getNameGUID()) + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
-				ProgramFragment headerFrag = volumeModule.createFragment(
-						"UEFI Volume Header (0x" + Long.toHexString(volume.getBasePointer()) + ")");
-				try {
-					Address headerBase = progBase.add(volume.getBasePointer()); 
-					headerFrag.move(headerBase, headerBase.add(volume.getHeaderLength()));
-					listing.setComment(headerBase, CodeUnit.PRE_COMMENT, 
-							volume.isChecksumValid() ? "Checksum Valid" : "Checksum Invalid");
-				} catch (NotFoundException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (AddressOutOfBoundsException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				for (EFIFirmwareFile file : volume.getFiles()) {
-					try {
-						String fileGUIDName = guids.getReadableName(file.getNameGUID());
-						ProgramFragment fileFrag = volumeModule.createFragment(
-								fileGUIDName + " (0x" + Long.toHexString(file.getBasePointer()) + ")");
-						Address fileBase = progBase.add(file.getBasePointer()); 
-						if (file.isChecksumValid()) {
-							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Checksum Valid");
-						} else if (file.isHeaderChecksumValid()) {
-							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Header Checksum Valid, File Checksum Invalid");
-						} else if (file.isFileChecksumValid()) {
-							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Header Checksum Invalid, File Checksum Valid");
-						} else {
-							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Both Header and File Checksum Invalid");
-						}
-						try {
-							fileFrag.move(fileBase, fileBase.add(file.getSize()));
-							if (file.isHeader2()) {
-								fileFrag.setComment(efidraAnalyzer.LABEL_EFI_FFS_FILE_HEADER2);
-							} else {
-								fileFrag.setComment(efidraAnalyzer.LABEL_EFI_FFS_FILE_HEADER);							
-							}
-						} catch (AddressOutOfBoundsException e) {
-							e.printStackTrace();
-						}
-					} catch (NotFoundException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-				}
-			} catch (DuplicateNameException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-		}
+//		Address progBase = program.getImageBase();
+//		findFirmwareVolumes(provider);
+//		Memory memory = program.getMemory();
+//		
+//		Listing listing = program.getListing();
+//		ProgramModule rootModule = listing.getDefaultRootModule();
+//		try {
+//			memory.createInitializedBlock("Unassigned and Padding", progBase.add(paddingOffset), 
+//					provider.getInputStream(paddingOffset), provider.length() - paddingOffset + 1,
+//					monitor, false);
+//		} catch (LockException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		} catch (MemoryConflictException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		} catch (AddressOverflowException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		} catch (CancelledException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		} catch (IllegalArgumentException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		} catch (IOException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		}
+//		
+//		// label all of the volumes we've found
+//		EFIGUIDs guids = new EFIGUIDs();
+//		for (EFIFirmwareVolume volume : volumes) {
+//			try {
+//				ProgramModule volumeModule = rootModule.createModule(
+//						guids.getReadableName(
+//								volume.getNameGUID()) + " (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+//				ProgramFragment headerFrag = volumeModule.createFragment(
+//						"UEFI Volume Header (0x" + Long.toHexString(volume.getBasePointer()) + ")");
+//				try {
+//					Address headerBase = progBase.add(volume.getBasePointer()); 
+//					headerFrag.move(headerBase, headerBase.add(volume.getHeaderLength()));
+//					listing.setComment(headerBase, CodeUnit.PRE_COMMENT, 
+//							volume.isChecksumValid() ? "Checksum Valid" : "Checksum Invalid");
+//				} catch (NotFoundException e) {
+//					// TODO Auto-generated catch block
+//					e.printStackTrace();
+//				} catch (AddressOutOfBoundsException e) {
+//					// TODO Auto-generated catch block
+//					e.printStackTrace();
+//				}
+//				for (EFIFirmwareFile file : volume.getFiles()) {
+//					try {
+//						String fileGUIDName = guids.getReadableName(file.getNameGUID());
+//						ProgramFragment fileFrag = volumeModule.createFragment(
+//								fileGUIDName + " (0x" + Long.toHexString(file.getBasePointer()) + ")");
+//						Address fileBase = progBase.add(file.getBasePointer()); 
+//						if (file.isChecksumValid()) {
+//							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Checksum Valid");
+//						} else if (file.isHeaderChecksumValid()) {
+//							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Header Checksum Valid, File Checksum Invalid");
+//						} else if (file.isFileChecksumValid()) {
+//							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Header Checksum Invalid, File Checksum Valid");
+//						} else {
+//							listing.setComment(fileBase, CodeUnit.PRE_COMMENT, "Both Header and File Checksum Invalid");
+//						}
+//						try {
+//							fileFrag.move(fileBase, fileBase.add(file.getSize()));
+//							if (file.isHeader2()) {
+//								fileFrag.setComment(efidraAnalyzer.LABEL_EFI_FFS_FILE_HEADER2);
+//							} else {
+//								fileFrag.setComment(efidraAnalyzer.LABEL_EFI_FFS_FILE_HEADER);							
+//							}
+//						} catch (AddressOutOfBoundsException e) {
+//							e.printStackTrace();
+//						}
+//					} catch (NotFoundException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					}
+//				}
+//			} catch (DuplicateNameException e) {
+//				// TODO Auto-generated catch block
+//				e.printStackTrace();
+//			}
+//		}
 	}
 
 	@Override
@@ -229,7 +273,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
 
 		// TODO: If this loader has custom options, add them to 'list'
-//		list.add(new Option("Convert GUIDs to Names", true));
+//		list.add(new Option("Skip Initial Padding", true));
 
 		return list;
 	}

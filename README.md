@@ -40,7 +40,7 @@ Each structure should be a JSON object with the following keys (example from [da
 		
 		// Example of simple built-in type
 		{
-			"type": "qword",
+			"type": "ulonglong",
 			"name": "FvLength",
 			"comment": "Length in bytes of the complete firmware volume, including the header."
 		},
