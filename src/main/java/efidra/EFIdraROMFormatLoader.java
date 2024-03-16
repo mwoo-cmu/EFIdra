@@ -24,6 +24,7 @@ import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Undefined;
 import ghidra.program.model.listing.Program;
@@ -33,6 +34,7 @@ public class EFIdraROMFormatLoader {
 	public static final String EFI_ROM_FORMATS_DIR = "rom_formats";
 	private static final char ARRAY_OPEN = '[';
 	private static final char ARRAY_CLOSE = ']';
+	private static final char POINTER = '*';
 	
 	private static File formatsDir;
 	public static HashMap<String, DataType> dataTypes;
@@ -77,6 +79,16 @@ public class EFIdraROMFormatLoader {
 		return dataTypes.get(type);
 	}
 	
+	private static DataType parsePointerRecursive(String type) {
+		if (type.charAt(type.length() - 1) == POINTER) {
+			int endIdx = type.lastIndexOf(POINTER);
+			String subtype = type.substring(0, endIdx);
+			DataType dType = parsePointerRecursive(subtype);
+			return new PointerDataType(dType);
+		}
+		return dataTypes.get(type);
+	}
+	
 	public static DataType parseDataType(String name, JSONArray members, DataTypeManager dtm) {
 		StructureDataType sdt = new StructureDataType(name, 0, dtm);
 		for (Object memberObj : members) {
@@ -89,8 +101,13 @@ public class EFIdraROMFormatLoader {
 			// fallback in case the type queried is null or not in the HashMap
 			DataType dType = Undefined.getUndefinedDataType(size);
 			if (type != null) {
+				DataType loadedDataType; 
+				if (type.charAt(type.length() - 1) == POINTER) {
+					loadedDataType = parsePointerRecursive(type);
+				} else {
+					loadedDataType = parseArrayRecursive(type);
+				}
 				// if non-array, will return dataTypes.get(type)
-				DataType loadedDataType = parseArrayRecursive(type);
 				if (loadedDataType != null) {
 					dType = loadedDataType;
 				}

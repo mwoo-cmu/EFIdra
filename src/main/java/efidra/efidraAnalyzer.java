@@ -217,7 +217,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		for (Group programItem : module.getChildren()) {
 			if (programItem instanceof ProgramFragment) {
 				ProgramFragment fragment = (ProgramFragment) programItem;
-				if (parser.isExecutable(program, fragment)) {
+				if (!(fragment.getName().startsWith("Header")) && parser.isExecutable(program, fragment)) {
 					
 //					peAnalyzer.added(program, fragment, monitor, log);
 					// create a new root module for this file, containing all of its data
@@ -226,37 +226,38 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 						String exeName = parents[parents.length - 1].getName().split(Pattern.quote("(0x"))[0] 
 								+ fragment.getName();
 						ProgramModule progRoot = listing.createRootModule(exeName);
-						ByteProvider provider = new MemoryByteProvider(memory, 
-								fragment.getFirstRange().getAddressSpace());
 						Address exeBase = fragment.getMinAddress().add(
 								parser.offsetToExecutable(program, fragment));
-						long fragMin = exeBase.getOffset();
-						MemoryBlock progBlock = memory.createInitializedBlock(exeName, program.getImageBase(), 
-								provider.getInputStream(fragMin),
-								fragment.getMaxAddress().getOffset() - fragMin, 
-								monitor, false);
+						ByteProvider provider = new MemoryByteProvider(memory, exeBase);
+						long baseOffs = exeBase.getOffset();
+//						MemoryBlock progBlock = memory.createInitializedBlock(exeName, 
+////								program.getImageBase(),
+//								exeBase,
+//								provider.getInputStream(0),
+//								fragment.getMaxAddress().getOffset() - baseOffs, 
+//								monitor, true);
 						
-						ExecutableSectionAnalyzers.runPEAnalyzer(listing, progRoot, provider, 
-								log);
-						
-//						disassembler.disassemble(exeBase, fragment);
+						ExecutableSectionAnalyzers.runPEAnalyzer(program, progRoot, 
+								disassembler, provider, exeName, exeBase, log, monitor);
+//						entryAnalyzer.added(program, fragment, monitor, log);
+//						funcPostAnalyzer.added(program, fragment, monitor, log);
 						
 						provider.close();
 					} catch (DuplicateNameException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
-					} catch (LockException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					} catch (MemoryConflictException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					} catch (AddressOverflowException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					} catch (IllegalArgumentException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
+//					} catch (LockException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					} catch (MemoryConflictException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					} catch (AddressOverflowException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					} catch (IllegalArgumentException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
 					} catch (IOException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();

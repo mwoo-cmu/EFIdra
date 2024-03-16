@@ -199,6 +199,9 @@ public class PiFirmwareParser extends EFIdraParserScript {
 					parseSection(reader, progBase, listing, file);
 					curIdx = reader.getPointerIndex();
 				}
+			} else if (hdrLen < size) {
+				ProgramFragment rawData = file.createFragment("Raw Data (0x" + Long.toHexString(curIdx) + ")");
+				rawData.move(fileBase.add(hdrLen), fileBase.add(size));
 			}
 			reader.setPointerIndex(fEnd);
 		}
