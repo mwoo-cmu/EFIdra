@@ -16,6 +16,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
@@ -100,14 +101,14 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			name = reader.readUnicodeString(baseIdx + strOffs);
 			sdt = sdt.clone(null);
 			// update the length of the string to match the actual string read
-			sdt.replace((int) strOffs, TerminatedUnicodeDataType.dataType, name.length());
+			sdt.replace(1, TerminatedUnicodeDataType.dataType, name.length());
 		} else if ("EFI_SECTION_VERSION".equals(secType)) {
 			long strOffs = getOffsetToField(sdt, "VersionString");
 			// get utf16 fileNameString until null terminator
 			String version = reader.readUnicodeString(baseIdx + strOffs);
 			sdt = sdt.clone(null);
 			// update the length of the string to match the actual string read
-			sdt.replace((int) strOffs, TerminatedUnicodeDataType.dataType, version.length());			
+			sdt.replace(2, TerminatedUnicodeDataType.dataType, version.length());			
 		} else if ("EFI_SECTION_COMPRESSION".equals(secType)) {
 			// decompress
 		}
@@ -128,11 +129,11 @@ public class PiFirmwareParser extends EFIdraParserScript {
 		if (Arrays.equals(reader.readByteArray(baseIdx, EFI_FF_HEADER_LEN), 
 				FREE_SPACE_HEADER)) {
 			skipPadding(reader, 0xffffffff);
-			baseIdx = reader.getPointerIndex();
+//			baseIdx = reader.getPointerIndex();
 			// can't know where to start reading a file, label as non-uefi data
 			ProgramFragment frag = parent.createFragment(
 					"Non-UEFI Data (0x" + Long.toHexString(baseIdx) + ")");
-			frag.move(progBase.add(baseIdx), progBase.add(fvEnd));
+			frag.move(progBase.add(baseIdx), progBase.add(fvEnd - 1));
 			reader.setPointerIndex(fvEnd);
 		} else {
 			Address fileBase = progBase.add(baseIdx);
@@ -159,11 +160,12 @@ public class PiFirmwareParser extends EFIdraParserScript {
 					 headerType, name);
 			
 			// check checksums
-			byte subtractedFields = (byte) (reader.readByte(
-					baseIdx + getOffsetToField(EFI_FFS_FILE_HEADER, "IntegrityCheck"))
-					+ reader.readByte(
-							baseIdx + getOffsetToField(EFI_FFS_FILE_HEADER, "State")));
-			String hdrChecksum = (checksum8(reader, hdrLen) - subtractedFields) == 0 ? 
+			long subtractedFields = ((long) reader.readByte(baseIdx 
+					+ getOffsetToField(EFI_FFS_FILE_HEADER, "IntegrityCheck")
+					+ getOffsetToField(EFI_FFS_INTEGRITY_CHECK, "File"))) & 0xff;
+			subtractedFields += ((long) reader.readByte(
+							baseIdx + getOffsetToField(EFI_FFS_FILE_HEADER, "State"))) & 0xff;
+			String hdrChecksum = ((checksum8(reader, hdrLen) - subtractedFields) & 0xff) == 0 ? 
 					"Header Checksum Valid" : "Header Checksum Invalid";
 			String fileChecksum;
 			long curIdx = baseIdx + hdrLen;
@@ -189,10 +191,11 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			byte fType = reader.readByte(
 					baseIdx + getOffsetToField(EFI_FFS_FILE_HEADER, "Type"));
 			// RAW and PAD filetypes don't have sections
-			if (fType != EFI_FV_FILETYPE.getValue("EFI_FV_FILETYPE_RAW") &&
-					fType != EFI_FV_FILETYPE.getValue("EFI_FV_FILETYPE_FFS_PAD")) {
+			if (fType != (byte) EFI_FV_FILETYPE.getValue("EFI_FV_FILETYPE_RAW") &&
+					fType != (byte) EFI_FV_FILETYPE.getValue("EFI_FV_FILETYPE_FFS_PAD")) {
 				// parse sections
 				while (curIdx < fEnd) {
+					reader.align(4);
 					parseSection(reader, progBase, listing, file);
 					curIdx = reader.getPointerIndex();
 				}
@@ -220,14 +223,18 @@ public class PiFirmwareParser extends EFIdraParserScript {
 					EFI_FIRMWARE_VOLUME_HEADER, "ExtHeaderOffset"));
 			long fileOffset = baseIdx + hdrLen;
 			
+			if (extHeaderOffset != 0) {
+				// update name if available
+				name = readGuid(reader, baseIdx + extHeaderOffset + getOffsetToField(
+						EFI_FIRMWARE_VOLUME_EXT_HEADER, "FvName"));
+			}
+			
 			// create the volume
 			ProgramModule volume = createProgramModuleWithHeader(listing, fvBase, parent, 
 					EFI_FIRMWARE_VOLUME_HEADER, name);
 			
 			// check if there's an extended header
 			if (extHeaderOffset != 0) {
-//				name = readGuid(reader, baseIdx + extHeaderOffset + getOffsetToField(
-//						EFI_FIRMWARE_VOLUME_EXT_HEADER, "FvName"));
 				
 				// create extended header structure
 				Address extHdrBase = fvBase.add(extHeaderOffset);
@@ -236,10 +243,9 @@ public class PiFirmwareParser extends EFIdraParserScript {
 				// add the extended header to the header fragment for easier readability
 				int extHdrSize = reader.readInt(baseIdx + extHeaderOffset
 						+ getOffsetToField(EFI_FIRMWARE_VOLUME_EXT_HEADER, "ExtHeaderSize"));
-				((ProgramFragment) volume.getChildren()[0]).move(extHdrBase, extHdrBase.add(extHdrSize));
+				((ProgramFragment) volume.getChildren()[0]).move(extHdrBase, extHdrBase.add(extHdrSize - 1));
 				
-				 fileOffset = baseIdx + extHeaderOffset + getOffsetToField(
-				 		 EFI_FIRMWARE_VOLUME_EXT_HEADER, "ExtHeaderSize");
+				fileOffset = baseIdx + extHeaderOffset + extHdrSize;
 			}
 			
 			// check 16-bit fv header checksum
@@ -253,6 +259,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			// set reader to start of files
 			reader.setPointerIndex(curIdx);
 			while (curIdx < fvEnd) {
+				reader.align(EFI_FV_OFFSET);
 				parseFile(reader, progBase, listing, volume, fvEnd);
 				curIdx = reader.getPointerIndex();
 			}
@@ -278,7 +285,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			reader.align(EFI_FV_OFFSET);
 			// need to offset by the size of the zero vector
 			long curIdx = reader.getPointerIndex() - 16;
-			long fileLen = reader.length();
+			long fileLen = reader.length() - 1;
 			reader.setPointerIndex(curIdx);
 			while (curIdx < fileLen) {
 				parseVolume(reader, progBase, listing, rootModule);
@@ -301,10 +308,24 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			e.printStackTrace();
 		}
 	}
+
+	@Override
+	public boolean isExecutable(Program program, ProgramFragment fragment) {
+		BinaryReader reader = getBinaryReader(program, fragment);
+		try {
+			moveReaderToField(reader, EFI_COMMON_SECTION_HEADER, "Type");
+			byte sType = reader.readNextByte();
+			return (sType == EFI_SECTION_TYPE.getValue("EFI_SECTION_PE32") || 
+					sType == EFI_SECTION_TYPE.getValue("EFI_SECTION_TE"));
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return false;
+	}
 	
 	@Override
-	protected void run() throws Exception {
-		// TODO Auto-generated method stub
-		Msg.info(null, getScriptName());
+	public long offsetToExecutable(Program program, ProgramFragment fragment) {
+		return program.getListing().getDataAt(fragment.getMinAddress()).getDataType().getLength();
 	}
 }

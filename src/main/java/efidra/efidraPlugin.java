@@ -182,7 +182,7 @@ public class efidraPlugin extends Plugin {
 				Memory memory = program.getMemory();
 				Listing listing = program.getListing();
 				ProgramModule rootModule = listing.getDefaultRootModule();
-				efidraExporter.addFilesByTypeRecursive(rootModule, efidraExporter.PE_SECTION_TYPES, memory, listing, file);
+				efidraExporter.addFilesByTypeRecursive(rootModule, program, file);
 			})
 			.enabled(true)
 			.description("Export all executables in this ROM to a given Directory")

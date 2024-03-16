@@ -19,26 +19,22 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import ghidra.app.util.*;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.exporter.Exporter;
 import ghidra.app.util.exporter.ExporterException;
 import ghidra.framework.model.DomainObject;
-import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.Group;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
-import ghidra.program.model.mem.Memory;
-import ghidra.program.model.mem.MemoryAccessException;
-import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -46,13 +42,6 @@ import ghidra.util.task.TaskMonitor;
  */
 public class efidraExporter extends Exporter {
 
-	public static final List<Byte> PE_SECTION_TYPES = Arrays.asList(new Byte[] {
-			EFIFirmwareSection.EFI_SECTION_PE32,
-			EFIFirmwareSection.EFI_SECTION_TE
-	});
-	
-//	private static Address programBase;
-	
 	/**
 	 * Exporter constructor.
 	 */
@@ -74,73 +63,112 @@ public class efidraExporter extends Exporter {
 		return false;
 	}
 
-	private static void addFilesByTypeRecursive(ProgramModule module, List<Byte> fileType, Memory memory, 
-			Listing listing, ZipOutputStream zipOs, File outputDir) throws IllegalArgumentException {
+	private static void addFilesByTypeRecursive(ProgramModule module, Program program, 
+			ZipOutputStream zipOs, File outputDir) throws IllegalArgumentException {
 		if (zipOs == null && outputDir == null)
 			throw new IllegalArgumentException("No output specified.");
 		for (Group programItem : module.getChildren()) {
-			if (programItem instanceof ProgramFragment && !programItem.getName().startsWith("UEFI Volume Header")) {
+			if (programItem instanceof ProgramFragment) {
 				try {
 					ProgramFragment programFragment = (ProgramFragment) programItem;
-					EFIFirmwareFile efiFile = new EFIFirmwareFile(memory, programFragment);
-					for (EFIFirmwareSection section : efiFile.getSections()) {
-						if (fileType.contains(section.getType())) {
-							StringBuilder sb = new StringBuilder();
-							for (String parent : programItem.getParentNames()) {
-								// pull the name/GUID without the unique address
-								sb.append(parent.split(Pattern.quote(" (0x"))[0] + "/");
-							}
-							if (outputDir != null) {
-								File dir = new File(outputDir, sb.toString());
-								dir.mkdirs();
-							}
-							sb.append(programItem.getName().split(Pattern.quote(" (0x"))[0]);
-							if (section.getType() == EFIFirmwareSection.EFI_SECTION_PE32) {
-								sb.append("_PE32_Section");
-							} else if (section.getType() == EFIFirmwareSection.EFI_SECTION_TE) {
-								sb.append("_TE_Section");
-							}
-							sb.append(".efi");
-							Msg.info(null, sb.toString());
-//							Address sectionBase = programBase.add(section.getBasePointer());
-							// again, here we assume that the program fragment 
-							// representing a valid EFI Firmware File is the first 
-							// address range in its program fragment
-//							byte[] sectionBytes = new byte[section.getSize()];
-							byte[] sectionBytes = section.getSectionData();
-//							memory.getBytes(sectionBase, sectionBytes);
-							if (zipOs != null) {
-								ZipEntry entry = new ZipEntry(sb.toString());
-								zipOs.putNextEntry(entry);
-								zipOs.write(sectionBytes);
-								zipOs.closeEntry();
-							}
-							if (outputDir != null) {
-								File outf = new File(outputDir, sb.toString());
-								FileOutputStream fOs = new FileOutputStream(outf);
-								fOs.write(sectionBytes);
-								fOs.close();
-							}
+					if (efidraAnalyzer.parser.isExecutable(program, programFragment)) {
+						StringBuilder sb = new StringBuilder();
+						for (String parent : programItem.getParentNames()) {
+							// pull the name/GUID without the unique address
+							sb.append(parent.split(Pattern.quote(" (0x"))[0] + "/");
+						}
+						if (outputDir != null) {
+							File dir = new File(outputDir, sb.toString());
+							dir.mkdirs();
+						}
+						sb.append(programItem.getName().split(Pattern.quote(" (0x"))[0]);
+						sb.append(".efi");
+						
+						BinaryReader reader = efidraAnalyzer.parser.getBinaryReader(program, programFragment);
+						// offset reader to start of actual program, rather than section
+						long exeOffs = efidraAnalyzer.parser.offsetToExecutable(program, programFragment);
+						long fragSize = programFragment.getMaxAddress().getOffset() - programFragment.getMinAddress().getOffset();
+						reader.setPointerIndex(reader.getPointerIndex() + exeOffs);
+						byte[] fragBytes = reader.readNextByteArray((int) (fragSize - exeOffs));
+						
+						if (zipOs != null) {
+							ZipEntry entry = new ZipEntry(sb.toString());
+							zipOs.putNextEntry(entry);
+							zipOs.write(fragBytes);
+							zipOs.closeEntry();
+						}
+						if (outputDir != null) {
+							File outf = new File(outputDir, sb.toString());
+							FileOutputStream fOs = new FileOutputStream(outf);
+							fOs.write(fragBytes);
+							fOs.close();
 						}
 					}
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
+//				try {
+//					ProgramFragment programFragment = (ProgramFragment) programItem;
+//					EFIFirmwareFile efiFile = new EFIFirmwareFile(memory, programFragment);
+//					for (EFIFirmwareSection section : efiFile.getSections()) {
+//						if (fileType.contains(section.getType())) {
+//							StringBuilder sb = new StringBuilder();
+//							for (String parent : programItem.getParentNames()) {
+//								// pull the name/GUID without the unique address
+//								sb.append(parent.split(Pattern.quote(" (0x"))[0] + "/");
+//							}
+//							if (outputDir != null) {
+//								File dir = new File(outputDir, sb.toString());
+//								dir.mkdirs();
+//							}
+//							sb.append(programItem.getName().split(Pattern.quote(" (0x"))[0]);
+//							if (section.getType() == EFIFirmwareSection.EFI_SECTION_PE32) {
+//								sb.append("_PE32_Section");
+//							} else if (section.getType() == EFIFirmwareSection.EFI_SECTION_TE) {
+//								sb.append("_TE_Section");
+//							}
+//							sb.append(".efi");
+//							Msg.info(null, sb.toString());
+////							Address sectionBase = programBase.add(section.getBasePointer());
+//							// again, here we assume that the program fragment 
+//							// representing a valid EFI Firmware File is the first 
+//							// address range in its program fragment
+////							byte[] sectionBytes = new byte[section.getSize()];
+//							byte[] sectionBytes = section.getSectionData();
+////							memory.getBytes(sectionBase, sectionBytes);
+//							if (zipOs != null) {
+//								ZipEntry entry = new ZipEntry(sb.toString());
+//								zipOs.putNextEntry(entry);
+//								zipOs.write(sectionBytes);
+//								zipOs.closeEntry();
+//							}
+//							if (outputDir != null) {
+//								File outf = new File(outputDir, sb.toString());
+//								FileOutputStream fOs = new FileOutputStream(outf);
+//								fOs.write(sectionBytes);
+//								fOs.close();
+//							}
+//						}
+//					}
+//				} catch (IOException e) {
+//					// TODO Auto-generated catch block
+//					e.printStackTrace();
+//				}
 			} else if (programItem instanceof ProgramModule) {
-				addFilesByTypeRecursive((ProgramModule) programItem, fileType, memory, listing, zipOs, outputDir);
+				addFilesByTypeRecursive((ProgramModule) programItem, program, zipOs, outputDir);
 			}
 		}
 	}
 	
-	private static void addFilesByTypeRecursive(ProgramModule module, List<Byte> fileType, Memory memory, 
-			Listing listing, ZipOutputStream zipOs) {
-		addFilesByTypeRecursive(module, fileType, memory, listing, zipOs, null);
+	private static void addFilesByTypeRecursive(ProgramModule module, Program program, 
+			ZipOutputStream zipOs) {
+		addFilesByTypeRecursive(module, program, zipOs, null);
 	}
 	
-	public static void addFilesByTypeRecursive(ProgramModule module, List<Byte> fileType, Memory memory, 
-			Listing listing, File outputDir) {
-		addFilesByTypeRecursive(module, fileType, memory, listing, null, outputDir);
+	public static void addFilesByTypeRecursive(ProgramModule module, Program program, 
+			File outputDir) {
+		addFilesByTypeRecursive(module, program, null, outputDir);
 	}
 	
 	@Override
@@ -158,7 +186,6 @@ public class efidraExporter extends Exporter {
 		
 		Program program = (Program) domainObj;
 //		programBase = program.getImageBase();
-		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
 		
@@ -167,7 +194,7 @@ public class efidraExporter extends Exporter {
 		FileOutputStream fileOs = new FileOutputStream(file);
 		ZipOutputStream zipOs = new ZipOutputStream(fileOs);
 		
-		addFilesByTypeRecursive(rootModule, PE_SECTION_TYPES, memory, listing, zipOs);
+		addFilesByTypeRecursive(rootModule, program, zipOs);
 		
 		zipOs.close();
 		fileOs.close();

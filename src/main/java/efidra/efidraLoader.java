@@ -55,8 +55,12 @@ import ghidra.util.task.TaskMonitor;
  */
 public class efidraLoader extends AbstractProgramWrapperLoader {
 
-	private List<EFIFirmwareVolume> volumes;
+//	private List<EFIFirmwareVolume> volumes;
 	private long paddingOffset;
+	private static final String SKIP_PADDING = "Skip Initial Padding";
+	private static final String RETAIN_PADDING = "Retain Bytes of Padding:";
+	private static final String PADDING_VAL = "Padding Value (all 0s or all 1s)";
+	private static final long DEFAULT_PADDING_RETAIN = 64;
 	
 	@Override
 	public String getName() {
@@ -104,41 +108,47 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 		return loadSpecs;
 	}
 	
-	private void findFirmwareVolumes(ByteProvider provider) throws IOException {
-		// all UEFI images are little endian
-		BinaryReader reader = new BinaryReader(provider, true);
-		long fileLen = provider.length();
-		long curIdx = 0;
-		volumes = new ArrayList<>();
-		paddingOffset = 0;
-		while (curIdx < fileLen) {
-			int next = reader.readNextInt();
-			if (paddingOffset == 0 && next != 0) {
-				// find the start of the ROM excluding all the padding at the beginning
-				// need to offset by the int read and the size of the zero vector
-				paddingOffset = reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.ZERO_VECTOR_LEN;
-			}
-			if (next == EFIFirmwareVolume.EFI_FVH_SIGNATURE) {
-				reader.setPointerIndex(reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.EFI_SIG_OFFSET);
-				// after this call, reader will be pointed at the end of the 
-				// last firmware volume, so next header will be the next fv
-				volumes.add(new EFIFirmwareVolume(reader));
-			}
-			curIdx = reader.getPointerIndex();
-		}
-		// in case malformed volumes have read too far
-		reader.setPointerIndex(fileLen);
-	}
+//	private void findFirmwareVolumes(ByteProvider provider) throws IOException {
+//		// all UEFI images are little endian
+//		BinaryReader reader = new BinaryReader(provider, true);
+//		long fileLen = provider.length();
+//		long curIdx = 0;
+//		volumes = new ArrayList<>();
+//		paddingOffset = 0;
+//		while (curIdx < fileLen) {
+//			int next = reader.readNextInt();
+//			if (paddingOffset == 0 && next != 0) {
+//				// find the start of the ROM excluding all the padding at the beginning
+//				// need to offset by the int read and the size of the zero vector
+//				paddingOffset = reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.ZERO_VECTOR_LEN;
+//			}
+//			if (next == EFIFirmwareVolume.EFI_FVH_SIGNATURE) {
+//				reader.setPointerIndex(reader.getPointerIndex() - BinaryReader.SIZEOF_INT - EFIFirmwareVolume.EFI_SIG_OFFSET);
+//				// after this call, reader will be pointed at the end of the 
+//				// last firmware volume, so next header will be the next fv
+//				volumes.add(new EFIFirmwareVolume(reader));
+//			}
+//			curIdx = reader.getPointerIndex();
+//		}
+//		// in case malformed volumes have read too far
+//		reader.setPointerIndex(fileLen);
+//	}
 	
-	private void skipPadding(ByteProvider provider, long keep) throws IOException {
+	/**
+	 * 
+	 * @param provider
+	 * @param keep The number of padding bytes to keep. This value should be
+	 * 	a multiple of 8 to ensure valid alignment
+	 * @throws IOException
+	 */
+	private void skipPadding(ByteProvider provider, long keep, int paddingVal) throws IOException {
 		BinaryReader reader = new BinaryReader(provider, true);
 		long fileLen = provider.length();
 		long curIdx = 0;
-		volumes = new ArrayList<>();
 		paddingOffset = 0;
 		while (curIdx < fileLen) {
 			int next = reader.readNextInt();
-			if (paddingOffset == 0 && next != 0) {
+			if (paddingOffset == 0 && next != paddingVal) {
 				// find the start of the ROM excluding all the padding at the beginning
 				// need to offset by the int read and the size of the zero vector
 				paddingOffset = reader.getPointerIndex() - BinaryReader.SIZEOF_INT - keep;
@@ -154,9 +164,24 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			throws CancelledException, IOException {
 		Memory memory = program.getMemory();
 		Address progBase = program.getImageBase();
+		boolean skipPaddingOption = false;
+		long paddingRetain = DEFAULT_PADDING_RETAIN;
+		int paddingVal = 0;
+		for (Option opt : options) {
+			if (SKIP_PADDING.equals(opt.getName())) {
+				skipPaddingOption = (Boolean) opt.getValue();
+			} else if (RETAIN_PADDING.equals(opt.getName())) {
+				paddingRetain = (Long) opt.getValue();
+			} else if (PADDING_VAL.equals(opt.getName())) {
+				int val = (Integer) opt.getValue();
+				paddingVal = val == 0 ? 0 : 0xffffffff;
+			}
+		}
+		if (skipPaddingOption) 
+			skipPadding(provider, paddingRetain, paddingVal);
 		try {
-			memory.createInitializedBlock("Unassigned and Padding", progBase, 
-					provider.getInputStream(paddingOffset), provider.length() + 1,
+			memory.createInitializedBlock("Unassigned and Padding", progBase.add(paddingOffset), 
+					provider.getInputStream(paddingOffset), provider.length() - paddingOffset + 1,
 					monitor, false);
 		} catch (LockException e) {
 			// TODO Auto-generated catch block
@@ -273,7 +298,9 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
 
 		// TODO: If this loader has custom options, add them to 'list'
-//		list.add(new Option("Skip Initial Padding", true));
+		list.add(new Option(SKIP_PADDING, true));
+		list.add(new Option(RETAIN_PADDING, DEFAULT_PADDING_RETAIN));
+		list.add(new Option(PADDING_VAL, 0));
 
 		return list;
 	}

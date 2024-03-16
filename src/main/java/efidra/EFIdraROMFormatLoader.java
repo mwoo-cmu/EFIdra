@@ -16,6 +16,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+import generic.jar.ResourceFile;
 import ghidra.framework.Application;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.BuiltInDataTypeManager;
@@ -173,14 +174,17 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
+	public static void loadROMFormat(Program program, String jsonFile) throws FileNotFoundException {
+		ResourceFile f = Application.getModuleDataFile(EFI_ROM_FORMATS_DIR + "/" + jsonFile);
+		loadJSON(f.getFile(true), program.getDataTypeManager());
+	}
+	
 	public static void loadROMFormats(Program program) {
 		DataTypeManager dtm = program.getDataTypeManager();
 		for (File file : formatsDir.listFiles()) {
 			if (file.isFile()) {
 				if (file.getName().endsWith(".json")) {
 					loadJSON(file, dtm);
-				} else if (file.getName().endsWith(".java")) {
-					
 				}
 			}
 		}

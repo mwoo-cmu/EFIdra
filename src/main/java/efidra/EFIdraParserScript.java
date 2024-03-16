@@ -5,8 +5,12 @@ import ghidra.app.script.GhidraScript;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.MemoryByteProvider;
+import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
+import ghidra.program.model.data.AbstractFloatDataType;
+import ghidra.program.model.data.AbstractIntegerDataType;
+import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.StructureDataType;
@@ -14,7 +18,9 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.util.CodeUnitInsertionException;
+import ghidra.util.GhidraLittleEndianDataConverter;
 import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.NotFoundException;
@@ -42,6 +48,30 @@ public class EFIdraParserScript extends GhidraScript {
 	protected void moveReaderToField(BinaryReader reader, StructureDataType sdt, 
 			String fieldName) {
 		reader.setPointerIndex(reader.getPointerIndex() + getOffsetToField(sdt, fieldName));
+	}
+
+	protected int readInt3(BinaryReader reader, long offset) throws IOException {
+		byte[] intArray = reader.readByteArray(offset, 3);
+		// little endian 3-byte integer
+		return ((intArray[2] << 16) & 0xff0000) + ((intArray[1] << 8) & 0xff00) + 
+				(intArray[0] & 0xff);
+	}
+	
+	protected int readNextInt3(BinaryReader reader) throws IOException {
+		byte[] intArray = reader.readNextByteArray(3);
+		// little endian 3-byte integer
+		return ((intArray[2] << 16) & 0xff0000) + ((intArray[1] << 8) & 0xff00) + 
+				(intArray[0] & 0xff);
+	}
+	
+	protected long readIntN(BinaryReader reader, long offset, int n) throws IOException {
+		byte[] intArray = reader.readByteArray(offset, n);
+		long mask = 0xff;
+		long intval = intArray[0] & mask;
+		for (int i = 1; i < n; i++) {
+			intval += (intArray[i] & mask) << 8;
+		}
+		return intval;
 	}
 	
 	protected void skipPadding(BinaryReader reader, byte paddingValue) throws IOException {
@@ -147,18 +177,18 @@ public class EFIdraParserScript extends GhidraScript {
 	
 	protected short checksum16(BinaryReader reader, long length) throws IOException {
 		long base = reader.getPointerIndex();
-		int sum = 0;
+		long sum = 0;
 		for (int i = 0; i < length; i += 2) {
-			sum += reader.readShort(base + i);
+			sum += ((long) reader.readShort(base + i)) & 0xffff;
 		}
 		return (short) (sum & 0xFFFF);
 	}
 	
 	protected byte checksum8(BinaryReader reader, long length) throws IOException {
 		long base = reader.getPointerIndex();
-		int sum = 0;
-		for (int i = 0; i < length; i ++) {
-			sum += reader.readByte(base + i);
+		long sum = 0;
+		for (int i = 0; i < length; i++) {
+			sum += ((long) reader.readByte(base + i)) & 0xff;
 		}
 		return (byte) (sum & 0xFF);
 	}
@@ -180,33 +210,58 @@ public class EFIdraParserScript extends GhidraScript {
 	protected String readNextGuid(BinaryReader reader) throws IOException {
 		return guidBytesToReadable(reader.readNextByteArray(EFIGUIDs.EFI_GUID_LEN));
 	}
-
-	protected int readInt3(BinaryReader reader, long offset) throws IOException {
-		byte[] intArray = reader.readByteArray(offset, 3);
-		// little endian 3-byte integer
-		return ((intArray[2] << 16) & 0xff0000) + ((intArray[1] << 8) & 0xff00) + 
-				(intArray[0] & 0xff);
-	}
-	
-	protected int readNextInt3(BinaryReader reader) throws IOException {
-		byte[] intArray = reader.readNextByteArray(3);
-		// little endian 3-byte integer
-		return ((intArray[2] << 16) & 0xff0000) + ((intArray[1] << 8) & 0xff00) + 
-				(intArray[0] & 0xff);
-	}
 	
 	protected BinaryReader getBinaryReader(Program program) {
+		Memory memory = program.getMemory();
 		return new BinaryReader(new MemoryByteProvider(
-				program.getMemory(), program.getImageBase()), true);
+				memory, program.getImageBase()), 
+				GhidraLittleEndianDataConverter.INSTANCE,
+				memory.getMinAddress().getOffset());
+	}
+	
+	protected BinaryReader getBinaryReader(Program program, ProgramFragment fragment) {		
+		Memory memory = program.getMemory();
+		return new BinaryReader(new MemoryByteProvider(
+				memory, program.getImageBase()), 
+				GhidraLittleEndianDataConverter.INSTANCE, 
+				fragment.getMinAddress().getOffset());
+	}
+	
+	protected BinaryReader getBinaryReader(ProgramFragment fragment) {
+		return getBinaryReader(currentProgram, fragment);
 	}
 	
 	/**
 	 * This method should be overridden by parsers to determine which fragments
 	 * are executables, which should be exported by the exporter and 
+	 * @param memory
 	 * @param fragment
 	 * @return
 	 */
-	public boolean isExecutable(ProgramFragment fragment) {
+	public boolean isExecutable(Program program, ProgramFragment fragment) {
+		return false;
+	}
+	
+	/**
+	 * This method should be overridden by parsers to specify the offset from 
+	 * the beginning of the ProgramFragment to the beginning of the actual 
+	 * executable file, to skip over any headers unrelated to the executable itself.
+	 * @param program
+	 * @param fragment
+	 * @return
+	 */
+	public long offsetToExecutable(Program program, ProgramFragment fragment) {
+		return 0;
+	}
+	
+	/**
+	 * This method should specify whether this parser can be used to parse the 
+	 * given program. 
+	 * @param program all of the program data
+	 * @return
+	 */
+	public boolean canParse(Program program) {
+		// TODO
 		return false;
 	}
 
@@ -215,8 +270,10 @@ public class EFIdraParserScript extends GhidraScript {
 	
 	@Override
 	protected void run() throws Exception {
-		// TODO Auto-generated method stub
-		Msg.info(null, getScriptName());
+		// by default, run the EFIdra Analyzer
+		efidraAnalyzer analyzer = new efidraAnalyzer();
+		analyzer.added(currentProgram, currentProgram.getAddressFactory().getAddressSet(), 
+				monitor, new MessageLog());
 	}
 
 }
