@@ -5,9 +5,12 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 
 import javax.swing.JPanel;
 
@@ -17,18 +20,27 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
 import generic.jar.ResourceFile;
+import ghidra.app.script.GhidraScript;
+import ghidra.app.script.GhidraScriptLoadException;
+import ghidra.app.script.GhidraScriptProvider;
+import ghidra.app.script.GhidraScriptUtil;
+import ghidra.app.script.JavaScriptProvider;
 import ghidra.framework.Application;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.BuiltInDataTypeManager;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.FileDataTypeManager;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Undefined;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.task.TaskMonitor;
 
 public class EFIdraROMFormatLoader {
 	public static final String EFI_ROM_FORMATS_DIR = "rom_formats";
@@ -38,6 +50,8 @@ public class EFIdraROMFormatLoader {
 	
 	private static File formatsDir;
 	public static HashMap<String, DataType> dataTypes;
+	public static List<EFIdraExecutableAnalyzerScript> execAnalyzers;
+	public static HashMap<String, EFIdraParserScript> parsers;
 	
 	private static void addGhidraDataTypes(Program program) {
 		Iterator<DataType> iter = program.getDataTypeManager().getAllDataTypes();
@@ -53,7 +67,7 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
-	public static void init(Program program) {
+	public static void init(Program program, TaskMonitor monitor) {
 		if (formatsDir == null || dataTypes == null) {
 			try {
 				formatsDir = Application.getModuleDataSubDirectory(EFI_ROM_FORMATS_DIR).getFile(true);
@@ -62,8 +76,10 @@ public class EFIdraROMFormatLoader {
 				e.printStackTrace();
 			}
 			dataTypes = new HashMap<>();
+			execAnalyzers = new ArrayList<>();
+			parsers = new HashMap<>();
 			addGhidraDataTypes(program);
-			loadROMFormats(program);
+			loadROMFormats(program, monitor);
 		}
 	}
 	
@@ -196,14 +212,73 @@ public class EFIdraROMFormatLoader {
 		loadJSON(f.getFile(true), program.getDataTypeManager());
 	}
 	
-	public static void loadROMFormats(Program program) {
+	public static void loadROMFormats(Program program, TaskMonitor monitor) {
 		DataTypeManager dtm = program.getDataTypeManager();
 		for (File file : formatsDir.listFiles()) {
 			if (file.isFile()) {
-				if (file.getName().endsWith(".json")) {
+				String fName = file.getName();
+				if (fName.endsWith(".json")) {
 					loadJSON(file, dtm);
+				} else if (fName.endsWith(".gdt")) {
+					try {
+						FileDataTypeManager fdtm = FileDataTypeManager.openFileArchive(file, false);
+						List<DataType> fDataTypes = new ArrayList<>();
+						fdtm.getAllDataTypes(fDataTypes);
+						dtm.addDataTypes(fDataTypes, 
+								DataTypeConflictHandler.REPLACE_EMPTY_STRUCTS_OR_RENAME_AND_ADD_HANDLER, 
+								monitor);
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (CancelledException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				} else if (fName.endsWith(".java")) {
+					try {
+						addUserScript(file);
+					} catch (GhidraScriptLoadException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
 				}
 			}
+		}
+	}
+	
+	public static void addUserScript(File file) throws GhidraScriptLoadException {
+		ResourceFile scriptFile = new ResourceFile(file);
+		PrintWriter writer = new PrintWriter(System.out);
+		GhidraScriptProvider provider = GhidraScriptUtil.getProvider(scriptFile);
+		// if can't find a provider for the script, create a new java one to run it
+		if (provider == null)
+			provider = new JavaScriptProvider();
+		GhidraScript script = provider.getScriptInstance(scriptFile, writer);
+		if (script instanceof EFIdraExecutableAnalyzerScript) {
+			execAnalyzers.add((EFIdraExecutableAnalyzerScript) script);
+		} else if (script instanceof EFIdraParserScript) {
+			parsers.put(file.getName(), (EFIdraParserScript) script);
+		}
+	}
+	
+	public static void addUserScript(String name) throws FileNotFoundException, GhidraScriptLoadException {
+		ResourceFile scriptFile = GhidraScriptUtil.findScriptByName(name);
+		// not GhidraScript, .java file in data/rom_formats directory
+		if (scriptFile == null) {
+			scriptFile = Application.getModuleDataFile(
+					EFIdraROMFormatLoader.EFI_ROM_FORMATS_DIR + "/" + name);
+		}
+		PrintWriter writer = new PrintWriter(System.out);
+		GhidraScriptProvider provider;
+		provider = GhidraScriptUtil.getProvider(scriptFile);
+		// if can't find a provider for the script, create a new java one to run it
+		if (provider == null)
+			provider = new JavaScriptProvider();
+		GhidraScript script = provider.getScriptInstance(scriptFile, writer);
+		if (script instanceof EFIdraExecutableAnalyzerScript) {
+			execAnalyzers.add((EFIdraExecutableAnalyzerScript) script);
+		} else if (script instanceof EFIdraParserScript) {
+			parsers.put(name, (EFIdraParserScript) script);
 		}
 	}
 
