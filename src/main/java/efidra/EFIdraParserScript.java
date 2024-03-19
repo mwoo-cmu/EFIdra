@@ -1,7 +1,9 @@
 package efidra;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import ghidra.app.script.GhidraScript;
+import ghidra.app.script.GhidraScriptLoadException;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.MemoryByteProvider;
@@ -25,7 +27,7 @@ import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.NotFoundException;
 
-public class EFIdraParserScript extends GhidraScript {
+public abstract class EFIdraParserScript extends GhidraScript {
 	
 	// maybe createProgramFragment and createProgramModule?
 	// can we pull data from StructureDataTypes?
@@ -231,6 +233,10 @@ public class EFIdraParserScript extends GhidraScript {
 		return getBinaryReader(currentProgram, fragment);
 	}
 	
+	protected void loadExecutableAnalyzer(String name) throws FileNotFoundException, GhidraScriptLoadException {
+		EFIdraROMFormatLoader.addUserScript(name);
+	}
+	
 	/**
 	 * This method should be overridden by parsers to determine which fragments
 	 * are executables, which should be exported by the exporter and 
@@ -238,9 +244,7 @@ public class EFIdraParserScript extends GhidraScript {
 	 * @param fragment
 	 * @return
 	 */
-	public boolean isExecutable(Program program, ProgramFragment fragment) {
-		return false;
-	}
+	public abstract boolean isExecutable(Program program, ProgramFragment fragment);
 	
 	/**
 	 * This method should be overridden by parsers to specify the offset from 
@@ -250,9 +254,7 @@ public class EFIdraParserScript extends GhidraScript {
 	 * @param fragment
 	 * @return
 	 */
-	public long offsetToExecutable(Program program, ProgramFragment fragment) {
-		return 0;
-	}
+	public abstract long offsetToExecutable(Program program, ProgramFragment fragment);
 	
 	/**
 	 * This method should specify whether this parser can be used to parse the 
@@ -260,13 +262,9 @@ public class EFIdraParserScript extends GhidraScript {
 	 * @param program all of the program data
 	 * @return
 	 */
-	public boolean canParse(Program program) {
-		// TODO
-		return false;
-	}
+	public abstract boolean canParse(Program program);
 
-	public void parseROM(Program program) {
-	}
+	public abstract void parseROM(Program program);
 	
 	@Override
 	protected void run() throws Exception {

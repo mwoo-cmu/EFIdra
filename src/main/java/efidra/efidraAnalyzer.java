@@ -15,28 +15,14 @@
  */
 package efidra;
 
-import java.awt.BorderLayout;
-import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.regex.Pattern;
-
-import javax.swing.JPanel;
-
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
 
 import generic.jar.ResourceFile;
 import ghidra.app.analyzers.FunctionStartPostAnalyzer;
 import ghidra.app.analyzers.FunctionStartPreFuncAnalyzer;
-import ghidra.app.analyzers.PortableExecutableAnalyzer;
 import ghidra.app.plugin.core.disassembler.EntryPointAnalyzer;
 import ghidra.app.script.GhidraScript;
 import ghidra.app.script.GhidraScriptLoadException;
@@ -45,51 +31,30 @@ import ghidra.app.script.GhidraScriptUtil;
 import ghidra.app.script.JavaScriptProvider;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalyzerType;
+import ghidra.app.util.NamespaceUtils;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.MemoryByteProvider;
-import ghidra.app.util.bin.format.mz.DOSHeader;
-import ghidra.app.util.bin.format.pe.NTHeader;
-import ghidra.app.util.bin.format.pe.PortableExecutable;
-import ghidra.app.util.bin.format.pe.PortableExecutable.SectionLayout;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.Application;
 import ghidra.framework.options.Options;
-import ghidra.framework.store.LockException;
 import ghidra.program.disassemble.Disassembler;
 import ghidra.program.disassemble.DisassemblerMessageListener;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSetView;
-import ghidra.program.model.data.ArrayDataType;
-import ghidra.program.model.data.ByteDataType;
-import ghidra.program.model.data.DWordDataType;
-import ghidra.program.model.data.DataType;
-import ghidra.program.model.data.DataTypeManager;
-import ghidra.program.model.data.Integer3DataType;
-import ghidra.program.model.data.IntegerDataType;
-import ghidra.program.model.data.LongDataType;
-import ghidra.program.model.data.QWordDataType;
-import ghidra.program.model.data.ShortDataType;
 import ghidra.program.model.data.StringDataType;
-import ghidra.program.model.data.StructureDataType;
-import ghidra.program.model.data.UnsignedIntegerDataType;
-import ghidra.program.model.data.UnsignedLongDataType;
-import ghidra.program.model.data.UnsignedShortDataType;
-import ghidra.program.model.data.WordDataType;
-import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Group;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
-import ghidra.program.model.mem.MemoryBlock;
-import ghidra.program.model.mem.MemoryConflictException;
+import ghidra.program.model.symbol.Namespace;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.util.CodeUnitInsertionException;
-import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -104,6 +69,9 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	public static final String LABEL_EFI_FFS_FILE_HEADER2 = "EFI_FFS_FILE_HEADER2";
 	public static final String LABEL_EFI_COMMON_SECTION_HEADER = "EFI_COMMON_SECTION_HEADER";
 	public static final String LABEL_EFI_COMMON_SECTION_HEADER2 = "EFI_COMMON_SECTION_HEADER2";
+	
+	private static final String PARSER_OPTION = "Parser Script";
+	private static final String ALL_PARSERS = "all";
 	
 	public static final String NVRAM_GUID = "CEF5B9A3-476D-497F-9FDC-E98143E0422C";
 	
@@ -142,8 +110,38 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 
 		// TODO: If this analyzer has custom options, register them here
 
-//		options.registerOption("Option name goes here", false, null,
-//			"Option description goes here");
+		options.registerOption(PARSER_OPTION, ALL_PARSERS, null,
+			"The name of the ROM parser script to use (should extend EFIdraParserScript)");
+	}
+	
+	@Override
+	public void optionsChanged(Options options, Program program) {
+		String pScript = options.getString(PARSER_OPTION, ALL_PARSERS);
+		if (ALL_PARSERS.equals(pScript)) {
+			parser = null;
+			return;
+		}
+		if (!pScript.endsWith(".java"))
+			pScript = pScript + ".java";
+		if (!EFIdraROMFormatLoader.parsers.containsKey(pScript)) {
+			try {
+				EFIdraROMFormatLoader.addUserScript(pScript);
+				// script is not a parser script
+				if (!EFIdraROMFormatLoader.parsers.containsKey(pScript)) {
+					parser = null;
+					return;
+				}
+			} catch (FileNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				return;
+			} catch (GhidraScriptLoadException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				return;
+			}
+		}
+		parser = EFIdraROMFormatLoader.parsers.get(pScript);
 	}
 	
 	private void parseNVRAMStructures(ProgramFragment programFragment, Listing listing, Memory memory) throws IOException, CodeUnitInsertionException {
@@ -159,45 +157,29 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		listing.createData(fragBase, StringDataType.dataType, 4);
 	}
 	
-	private void getParser(String name) throws FileNotFoundException, GhidraScriptLoadException {
-		// GhidraScript
-		ResourceFile scriptFile = GhidraScriptUtil.findScriptByName(name);
-		// not GhidraScript, .java file in data/rom_formats directory
-		if (scriptFile == null) {
-			scriptFile = Application.getModuleDataFile(
-					EFIdraROMFormatLoader.EFI_ROM_FORMATS_DIR + "/" + name);
-		}
-		PrintWriter writer = new PrintWriter(System.out);
-		GhidraScriptProvider provider;
-		GhidraScript script;
-		provider = GhidraScriptUtil.getProvider(scriptFile);
-		// if can't find a provider for the script, create a new java one to run it
-		if (provider == null)
-			provider = new JavaScriptProvider();
-		script = provider.getScriptInstance(scriptFile, writer);
-		parser = (EFIdraParserScript) script;
-	}
 	
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 
-		EFIdraROMFormatLoader.init(program);
+		EFIdraROMFormatLoader.init(program, monitor);
 		guids = new EFIGUIDs();
 		programBase = program.getImageBase();
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
-		Memory memory = program.getMemory();
 		
 		// probably try to give options to select the parser, along with an "all" option
 		// "all" tries everything until one works without error?
 		
-		try {
-			getParser("PiFirmwareParser.java");
+		if (parser != null) {
 			parser.parseROM(program);
-		} catch (FileNotFoundException | GhidraScriptLoadException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		} else {
+			for (EFIdraParserScript s : EFIdraROMFormatLoader.parsers.values()) {
+				if (s.canParse(program)) {
+					s.parseROM(program);
+					break;
+				}
+			}
 		}
 		analyzeExecutablesRecursive(rootModule, program, monitor, log);
 		
@@ -208,12 +190,13 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 			TaskMonitor monitor, MessageLog log) 
 			throws CancelledException {
 //		PortableExecutableAnalyzer peAnalyzer = new PortableExecutableAnalyzer();
-		FunctionStartPreFuncAnalyzer funcPreAnalyzer = new FunctionStartPreFuncAnalyzer();
-		FunctionStartPostAnalyzer funcPostAnalyzer = new FunctionStartPostAnalyzer();
-		EntryPointAnalyzer entryAnalyzer = new EntryPointAnalyzer();
-		Disassembler disassembler = Disassembler.getDisassembler(program, monitor, DisassemblerMessageListener.CONSOLE);
+//		FunctionStartPreFuncAnalyzer funcPreAnalyzer = new FunctionStartPreFuncAnalyzer();
+//		FunctionStartPostAnalyzer funcPostAnalyzer = new FunctionStartPostAnalyzer();
+//		EntryPointAnalyzer entryAnalyzer = new EntryPointAnalyzer();
+//		Disassembler disassembler = Disassembler.getDisassembler(program, monitor, DisassemblerMessageListener.CONSOLE);
 		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
+		Namespace globalNamespace = program.getGlobalNamespace();
 		for (Group programItem : module.getChildren()) {
 			if (programItem instanceof ProgramFragment) {
 				ProgramFragment fragment = (ProgramFragment) programItem;
@@ -229,7 +212,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 						Address exeBase = fragment.getMinAddress().add(
 								parser.offsetToExecutable(program, fragment));
 						ByteProvider provider = new MemoryByteProvider(memory, exeBase);
-						long baseOffs = exeBase.getOffset();
+//						long baseOffs = exeBase.getOffset();
 //						MemoryBlock progBlock = memory.createInitializedBlock(exeName, 
 ////								program.getImageBase(),
 //								exeBase,
@@ -237,8 +220,23 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 //								fragment.getMaxAddress().getOffset() - baseOffs, 
 //								monitor, true);
 						
-						ExecutableSectionAnalyzers.runPEAnalyzer(program, progRoot, 
-								disassembler, provider, exeName, exeBase, log, monitor);
+						// create a new Namespace for this executable, to store all functions
+						Namespace exeSpace = NamespaceUtils.createNamespaceHierarchy(exeName.replace(' ', '-'), 
+								globalNamespace, program, SourceType.ANALYSIS);
+						
+						EFIdraExecutableData eData = new EFIdraExecutableData(exeName, 
+								exeBase, exeSpace, progRoot, provider, program);
+						
+						// allow users to define/choose analyzers too
+						for (EFIdraExecutableAnalyzerScript s : EFIdraROMFormatLoader.execAnalyzers) {
+							if (s.canAnalyze(provider))
+								s.analyzeExecutable(eData, log);
+						}
+						
+						
+//						ExecutableSectionAnalyzers.runPEAnalyzer(program, progRoot, 
+//								disassembler, provider, exeName, exeBase, exeSpace, 
+//								log, monitor);
 //						entryAnalyzer.added(program, fragment, monitor, log);
 //						funcPostAnalyzer.added(program, fragment, monitor, log);
 						
@@ -259,6 +257,9 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 //						// TODO Auto-generated catch block
 //						e.printStackTrace();
 					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (InvalidInputException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
