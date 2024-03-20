@@ -1,5 +1,4 @@
 package efidra;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import ghidra.app.script.GhidraScript;
@@ -233,7 +232,7 @@ public abstract class EFIdraParserScript extends GhidraScript {
 		return getBinaryReader(currentProgram, fragment);
 	}
 	
-	protected void loadExecutableAnalyzer(String name) throws FileNotFoundException, GhidraScriptLoadException {
+	protected void loadExecutableAnalyzer(String name) throws GhidraScriptLoadException, IOException {
 		EFIdraROMFormatLoader.addUserScript(name);
 	}
 	

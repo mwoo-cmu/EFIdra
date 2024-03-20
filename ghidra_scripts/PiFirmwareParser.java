@@ -331,4 +331,9 @@ public class PiFirmwareParser extends EFIdraParserScript {
 	public long offsetToExecutable(Program program, ProgramFragment fragment) {
 		return program.getListing().getDataAt(fragment.getMinAddress()).getDataType().getLength();
 	}
+
+	@Override
+	public boolean canParse(Program program) {
+		return false;
+	}
 }

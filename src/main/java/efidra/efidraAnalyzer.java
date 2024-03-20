@@ -52,6 +52,7 @@ import ghidra.program.model.mem.Memory;
 import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.util.CodeUnitInsertionException;
+import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
@@ -139,6 +140,9 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 				return;
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
 		}
 		parser = EFIdraROMFormatLoader.parsers.get(pScript);
@@ -177,11 +181,13 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 			for (EFIdraParserScript s : EFIdraROMFormatLoader.parsers.values()) {
 				if (s.canParse(program)) {
 					s.parseROM(program);
+					parser = s;
 					break;
 				}
 			}
 		}
-		analyzeExecutablesRecursive(rootModule, program, monitor, log);
+		if (parser != null)
+			analyzeExecutablesRecursive(rootModule, program, monitor, log);
 		
 		return true;
 	}
@@ -230,7 +236,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 						// allow users to define/choose analyzers too
 						for (EFIdraExecutableAnalyzerScript s : EFIdraROMFormatLoader.execAnalyzers) {
 							if (s.canAnalyze(provider))
-								s.analyzeExecutable(eData, log);
+								s.analyzeExecutable(eData, log, monitor);
 						}
 						
 						

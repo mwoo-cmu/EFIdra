@@ -30,6 +30,7 @@ import docking.action.builder.ActionBuilder;
 import docking.tool.ToolConstants;
 import docking.widgets.filechooser.GhidraFileChooser;
 import docking.widgets.filechooser.GhidraFileChooserMode;
+import docking.widgets.checkbox.GCheckBox;
 import docking.ComponentProvider;
 import docking.action.DockingAction;
 import docking.action.ToolBarData;
@@ -46,6 +47,7 @@ import ghidra.program.model.mem.Memory;
 import ghidra.util.HelpLocation;
 import ghidra.util.Msg;
 import ghidra.app.script.AskDialog;
+import ghidra.app.script.GhidraScriptLoadException;
 import resources.Icons;
 
 /**
@@ -186,6 +188,28 @@ public class efidraPlugin extends Plugin {
 			})
 			.enabled(true)
 			.description("Export all executables in this ROM to a given Directory")
+			.buildAndInstall(tool);
+		new ActionBuilder("Load Executable Analyzer", getName())
+			.menuPath("&EFIdra", "Load Executable Analyzer")
+			.menuIcon(null)
+			.onAction(c -> {
+				AskDialog scriptDialog = new AskDialog("Load Executable Analyzer Script", "Script Name", AskDialog.STRING, "");
+//				scriptDialog.addButton(new GCheckBox("Load by default"));
+				String scriptName = scriptDialog.getTextFieldValue();
+				if (!scriptName.endsWith(".java"))
+					scriptName = scriptName + ".java";
+				JPanel panel = new JPanel(new BorderLayout());
+				try {
+					EFIdraROMFormatLoader.addUserScript(scriptName);
+					Msg.showInfo(null, panel, "Loaded Executable Analyzer", "Loaded " + scriptName + " successfuly.");
+				} catch (GhidraScriptLoadException | IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+					Msg.showError(e, panel, "Error Loading Executable Analyzer", "Error loading " + scriptName);
+				}
+			})
+			.enabled(true)
+			.description("Load an EFIdra Executable Analyzer GhidraScript")
 			.buildAndInstall(tool);
 	}
 	

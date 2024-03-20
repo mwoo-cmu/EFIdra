@@ -32,6 +32,7 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.exception.NotFoundException;
+import ghidra.util.task.TaskMonitor;
 
 public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 	// private methods createDataTypes, processSymbols, processDOSHeadeer,
@@ -214,7 +215,8 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 	}
 
 	@Override
-	public void analyzeExecutable(EFIdraExecutableData exe, MessageLog log) {
+	public void analyzeExecutable(EFIdraExecutableData exe, MessageLog log, TaskMonitor tMonitor) {
+		monitor = tMonitor;
 		Disassembler disassembler = Disassembler.getDisassembler(exe.parentROM, monitor, DisassemblerMessageListener.CONSOLE);
 		if (pe == null) {
 			try {
@@ -234,7 +236,7 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 			}
 		}
 		baseAddr = exe.baseAddr;
-		// currentProgram = exe.parentROM;
+		currentProgram = exe.parentROM;
 		listing = exe.parentROM.getListing();
 		messages = log;
 		progRoot = exe.programTree;

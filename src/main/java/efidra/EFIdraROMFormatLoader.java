@@ -44,14 +44,15 @@ import ghidra.util.task.TaskMonitor;
 
 public class EFIdraROMFormatLoader {
 	public static final String EFI_ROM_FORMATS_DIR = "rom_formats";
+	private static final String EXEC_ANALYZER_JSON = "ExecutableAnalyzers.json";
 	private static final char ARRAY_OPEN = '[';
 	private static final char ARRAY_CLOSE = ']';
 	private static final char POINTER = '*';
 	
 	private static File formatsDir;
-	public static HashMap<String, DataType> dataTypes;
-	public static List<EFIdraExecutableAnalyzerScript> execAnalyzers;
-	public static HashMap<String, EFIdraParserScript> parsers;
+	public static HashMap<String, DataType> dataTypes = new HashMap<>();
+	public static List<EFIdraExecutableAnalyzerScript> execAnalyzers = new ArrayList<>();
+	public static HashMap<String, EFIdraParserScript> parsers = new HashMap<>();
 	
 	private static void addGhidraDataTypes(Program program) {
 		Iterator<DataType> iter = program.getDataTypeManager().getAllDataTypes();
@@ -68,18 +69,16 @@ public class EFIdraROMFormatLoader {
 	}
 	
 	public static void init(Program program, TaskMonitor monitor) {
-		if (formatsDir == null || dataTypes == null) {
+		if (formatsDir == null) {
 			try {
 				formatsDir = Application.getModuleDataSubDirectory(EFI_ROM_FORMATS_DIR).getFile(true);
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			dataTypes = new HashMap<>();
-			execAnalyzers = new ArrayList<>();
-			parsers = new HashMap<>();
 			addGhidraDataTypes(program);
 			loadROMFormats(program, monitor);
+			loadDefaultExecutableAnalyzers();
 		}
 	}
 	
@@ -234,46 +233,76 @@ public class EFIdraROMFormatLoader {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
-				} else if (fName.endsWith(".java")) {
-					try {
-						addUserScript(file);
-					} catch (GhidraScriptLoadException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
+//				} else if (fName.endsWith(".java")) {
+//					try {
+//						addUserScript(file);
+//					} catch (GhidraScriptLoadException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					} catch (IOException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					}
 				}
 			}
 		}
 	}
 	
-	public static void addUserScript(File file) throws GhidraScriptLoadException {
-		ResourceFile scriptFile = new ResourceFile(file);
-		PrintWriter writer = new PrintWriter(System.out);
-		GhidraScriptProvider provider = GhidraScriptUtil.getProvider(scriptFile);
-		// if can't find a provider for the script, create a new java one to run it
-		if (provider == null)
-			provider = new JavaScriptProvider();
-		GhidraScript script = provider.getScriptInstance(scriptFile, writer);
-		if (script instanceof EFIdraExecutableAnalyzerScript) {
-			execAnalyzers.add((EFIdraExecutableAnalyzerScript) script);
-		} else if (script instanceof EFIdraParserScript) {
-			parsers.put(file.getName(), (EFIdraParserScript) script);
+	public static void loadDefaultExecutableAnalyzers() {
+		try {
+			JSONArray analyzerNames = (JSONArray) (new JSONParser().parse(new FileReader(
+				Application.getModuleDataFile(EXEC_ANALYZER_JSON).getFile(true))));
+			for (Object name : analyzerNames) {
+				addUserScript((String) name);
+			}
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (GhidraScriptLoadException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
+		
 	}
 	
-	public static void addUserScript(String name) throws FileNotFoundException, GhidraScriptLoadException {
+//	
+//	public static void addUserScript(File file) throws IOException, GhidraScriptLoadException {
+//		// assumes that the file is can't be retrieved by name
+//		ResourceFile scriptFile = new ResourceFile(file);
+//		PrintWriter writer = new PrintWriter(System.out);
+//		GhidraScriptProvider provider = GhidraScriptUtil.getProvider(scriptFile);
+//		// if can't find a provider for the script, create a new java one to run it
+//		GhidraScript script;
+//		if (provider == null) {
+//			provider = new JavaScriptProvider();
+//		}
+//		provider.createNewScript(scriptFile, "EFIdra Scripts");
+//		script = provider.getScriptInstance(scriptFile, writer);
+//		if (script instanceof EFIdraExecutableAnalyzerScript) {
+//			execAnalyzers.add((EFIdraExecutableAnalyzerScript) script);
+//		} else if (script instanceof EFIdraParserScript) {
+//			parsers.put(file.getName(), (EFIdraParserScript) script);
+//		}
+//	}
+	
+	public static void addUserScript(String name) throws GhidraScriptLoadException, IOException {
 		ResourceFile scriptFile = GhidraScriptUtil.findScriptByName(name);
 		// not GhidraScript, .java file in data/rom_formats directory
 		if (scriptFile == null) {
 			scriptFile = Application.getModuleDataFile(
 					EFIdraROMFormatLoader.EFI_ROM_FORMATS_DIR + "/" + name);
+//			addUserScript(scriptFile.getFile(true));
+//			return;
 		}
 		PrintWriter writer = new PrintWriter(System.out);
-		GhidraScriptProvider provider;
-		provider = GhidraScriptUtil.getProvider(scriptFile);
+		GhidraScriptProvider provider = GhidraScriptUtil.getProvider(scriptFile);
 		// if can't find a provider for the script, create a new java one to run it
-		if (provider == null)
-			provider = new JavaScriptProvider();
 		GhidraScript script = provider.getScriptInstance(scriptFile, writer);
 		if (script instanceof EFIdraExecutableAnalyzerScript) {
 			execAnalyzers.add((EFIdraExecutableAnalyzerScript) script);
