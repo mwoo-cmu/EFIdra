@@ -194,7 +194,7 @@ public class efidraPlugin extends Plugin {
 			.menuIcon(null)
 			.onAction(c -> {
 				AskDialog scriptDialog = new AskDialog("Load Executable Analyzer Script", "Script Name", AskDialog.STRING, "");
-//				scriptDialog.addButton(new GCheckBox("Load by default"));
+//				scriptDialog.addWorkPanel(new GCheckBox("Load by default"));
 				String scriptName = scriptDialog.getTextFieldValue();
 				if (!scriptName.endsWith(".java"))
 					scriptName = scriptName + ".java";

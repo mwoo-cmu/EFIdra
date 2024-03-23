@@ -50,6 +50,7 @@ public class EFIdraROMFormatLoader {
 	private static final char POINTER = '*';
 	
 	private static File formatsDir;
+	private static DataTypeManager dtm; 
 	public static HashMap<String, DataType> dataTypes = new HashMap<>();
 	public static List<EFIdraExecutableAnalyzerScript> execAnalyzers = new ArrayList<>();
 	public static HashMap<String, EFIdraParserScript> parsers = new HashMap<>();
@@ -104,7 +105,7 @@ public class EFIdraROMFormatLoader {
 		return dataTypes.get(type);
 	}
 	
-	public static DataType parseDataType(String name, JSONArray members, DataTypeManager dtm) {
+	public static DataType parseDataType(String name, JSONArray members) {
 		StructureDataType sdt = new StructureDataType(name, 0, dtm);
 		for (Object memberObj : members) {
 			JSONObject member = (JSONObject) memberObj;
@@ -137,11 +138,7 @@ public class EFIdraROMFormatLoader {
 		return sdt;
 	}
 	
-	public static DataType parseDataType(String name, JSONArray members) {
-		return parseDataType(name, members, null);
-	}
-	
-	public static EnumDataType parseEnumType(String name, JSONObject enumMembers, DataTypeManager dtm) {
+	public static EnumDataType parseEnumType(String name, JSONObject enumMembers) {
 		// determine how many bytes are needed to hold all enum values
 		long maxVal = (long) Collections.max(enumMembers.values());
 		int nBytes = 1;
@@ -159,11 +156,7 @@ public class EFIdraROMFormatLoader {
 		return edt;
 	}
 	
-	public static EnumDataType parseEnumType(String name, JSONObject enumMembers) {
-		return parseEnumType(name, enumMembers, null);
-	}	
-	
-	private static void loadJSON(File file, DataTypeManager dtm) {
+	private static void loadJSON(File file) {
 		try {
 			JSONObject format = (JSONObject) (new JSONParser().parse(new FileReader(file)));
 			JSONArray structures = (JSONArray) format.get("structures");
@@ -177,7 +170,7 @@ public class EFIdraROMFormatLoader {
 							Msg.info(null, "Duplicate structure name " + name
 									+ ". Second occurrence in " + file.getName());
 						}
-						dataTypes.put(name, parseDataType(name, members, dtm));
+						dataTypes.put(name, parseDataType(name, members));
 					}
 					JSONObject enumMembers = (JSONObject) struct.get("enum");
 					if (enumMembers != null) {
@@ -185,7 +178,7 @@ public class EFIdraROMFormatLoader {
 							Msg.info(null, "Duplicate structure name " + name
 									+ ". Second occurrence in " + file.getName());									
 						}
-						dataTypes.put(name, parseEnumType(name, enumMembers, dtm));
+						dataTypes.put(name, parseEnumType(name, enumMembers));
 					}
 				}
 			} else {
@@ -208,16 +201,16 @@ public class EFIdraROMFormatLoader {
 	
 	public static void loadROMFormat(Program program, String jsonFile) throws FileNotFoundException {
 		ResourceFile f = Application.getModuleDataFile(EFI_ROM_FORMATS_DIR + "/" + jsonFile);
-		loadJSON(f.getFile(true), program.getDataTypeManager());
+		loadJSON(f.getFile(true));
 	}
 	
 	public static void loadROMFormats(Program program, TaskMonitor monitor) {
-		DataTypeManager dtm = program.getDataTypeManager();
+		dtm = program.getDataTypeManager();
 		for (File file : formatsDir.listFiles()) {
 			if (file.isFile()) {
 				String fName = file.getName();
 				if (fName.endsWith(".json")) {
-					loadJSON(file, dtm);
+					loadJSON(file);
 				} else if (fName.endsWith(".gdt")) {
 					try {
 						FileDataTypeManager fdtm = FileDataTypeManager.openFileArchive(file, false);
@@ -312,6 +305,10 @@ public class EFIdraROMFormatLoader {
 	}
 
 	public static DataType getType(String typeName) {
-		return dataTypes.get(typeName);
+		DataType type = dataTypes.get(typeName);
+		if (type == null) {
+			type = dtm.getDataType(typeName);
+		}
+		return type;
 	}
 }

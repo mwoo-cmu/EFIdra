@@ -15,6 +15,7 @@ import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.StructureInternal;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
@@ -25,17 +26,12 @@ import ghidra.util.GhidraLittleEndianDataConverter;
 import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.NotFoundException;
+import ghidra.util.task.TaskMonitor;
 
 public abstract class EFIdraParserScript extends GhidraScript {
 	
-	// maybe createProgramFragment and createProgramModule?
-	// can we pull data from StructureDataTypes?
-	
-	// can parse within a header with sdt.getComponents() .. .getLength()
-	// maybe a getField helper function to get a field from an SDT, so that a 
-	// user can use the length field in a header
-		// maybe automatically apply length if the field is there?
-	protected long getOffsetToField(StructureDataType sdt, String fieldName) {
+	// maybe a getField helper function to get a field from an SDT
+	protected long getOffsetToField(StructureInternal sdt, String fieldName) {
 		int offset = 0;
 		for (DataTypeComponent comp : sdt.getComponents()) {
 			if (fieldName.equals(comp.getFieldName())) {
@@ -46,7 +42,7 @@ public abstract class EFIdraParserScript extends GhidraScript {
 		return offset;
 	}
 	
-	protected void moveReaderToField(BinaryReader reader, StructureDataType sdt, 
+	protected void moveReaderToField(BinaryReader reader, StructureInternal sdt, 
 			String fieldName) {
 		reader.setPointerIndex(reader.getPointerIndex() + getOffsetToField(sdt, fieldName));
 	}
@@ -214,18 +210,20 @@ public abstract class EFIdraParserScript extends GhidraScript {
 	
 	protected BinaryReader getBinaryReader(Program program) {
 		Memory memory = program.getMemory();
+		Address progBase = program.getImageBase();
 		return new BinaryReader(new MemoryByteProvider(
-				memory, program.getImageBase()), 
+				memory, progBase), 
 				GhidraLittleEndianDataConverter.INSTANCE,
-				memory.getMinAddress().getOffset());
+				memory.getMinAddress().subtract(progBase));
 	}
 	
 	protected BinaryReader getBinaryReader(Program program, ProgramFragment fragment) {		
 		Memory memory = program.getMemory();
+		Address progBase = program.getImageBase();
 		return new BinaryReader(new MemoryByteProvider(
-				memory, program.getImageBase()), 
+				memory, progBase), 
 				GhidraLittleEndianDataConverter.INSTANCE, 
-				fragment.getMinAddress().getOffset());
+				fragment.getMinAddress().subtract(progBase));
 	}
 	
 	protected BinaryReader getBinaryReader(ProgramFragment fragment) {
@@ -263,7 +261,7 @@ public abstract class EFIdraParserScript extends GhidraScript {
 	 */
 	public abstract boolean canParse(Program program);
 
-	public abstract void parseROM(Program program);
+	public abstract void parseROM(Program program, TaskMonitor tMonitor);
 	
 	@Override
 	protected void run() throws Exception {

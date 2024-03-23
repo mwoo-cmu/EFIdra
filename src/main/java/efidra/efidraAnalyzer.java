@@ -15,10 +15,13 @@
  */
 package efidra;
 
+import java.awt.BorderLayout;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.regex.Pattern;
+
+import javax.swing.JPanel;
 
 import generic.jar.ResourceFile;
 import ghidra.app.analyzers.FunctionStartPostAnalyzer;
@@ -73,12 +76,14 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	
 	private static final String PARSER_OPTION = "Parser Script";
 	private static final String ALL_PARSERS = "all";
+	private static final String OFFSET_OPTION = "Image Offset (Hex)";
 	
 	public static final String NVRAM_GUID = "CEF5B9A3-476D-497F-9FDC-E98143E0422C";
 	
 	private Address programBase;
 	private EFIGUIDs guids;
 	public static EFIdraParserScript parser;
+	private static long baseAddr;
 
 	public efidraAnalyzer() {
 
@@ -113,10 +118,17 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 
 		options.registerOption(PARSER_OPTION, ALL_PARSERS, null,
 			"The name of the ROM parser script to use (should extend EFIdraParserScript)");
+		
+		// option for offset to where the image base should be?
+//		options.registerOption(OFFSET_OPTION, "FE000000", null, 
+//			"The base address at which this ROM image is loaded, in hexadecimal");
 	}
 	
 	@Override
 	public void optionsChanged(Options options, Program program) {
+//		String offset = options.getString(OFFSET_OPTION, "0");
+//		baseAddr = Long.parseUnsignedLong(offset, 16);
+		
 		String pScript = options.getString(PARSER_OPTION, ALL_PARSERS);
 		if (ALL_PARSERS.equals(pScript)) {
 			parser = null;
@@ -125,25 +137,19 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		if (!pScript.endsWith(".java"))
 			pScript = pScript + ".java";
 		if (!EFIdraROMFormatLoader.parsers.containsKey(pScript)) {
-			try {
-				EFIdraROMFormatLoader.addUserScript(pScript);
-				// script is not a parser script
-				if (!EFIdraROMFormatLoader.parsers.containsKey(pScript)) {
-					parser = null;
-					return;
+				try {
+					EFIdraROMFormatLoader.addUserScript(pScript);
+					// script is not a parser script
+					if (!EFIdraROMFormatLoader.parsers.containsKey(pScript)) {
+						parser = null;
+						return;
+					}
+				} catch (GhidraScriptLoadException | IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+//					JPanel panel = new JPanel(new BorderLayout());
+//					Msg.showError(e, panel, "Error Loading ROM Parser", "Error loading " + pScript);
 				}
-			} catch (FileNotFoundException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				return;
-			} catch (GhidraScriptLoadException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				return;
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
 		}
 		parser = EFIdraROMFormatLoader.parsers.get(pScript);
 	}
@@ -176,11 +182,11 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		// "all" tries everything until one works without error?
 		
 		if (parser != null) {
-			parser.parseROM(program);
+			parser.parseROM(program, monitor);
 		} else {
 			for (EFIdraParserScript s : EFIdraROMFormatLoader.parsers.values()) {
 				if (s.canParse(program)) {
-					s.parseROM(program);
+					s.parseROM(program, monitor);
 					parser = s;
 					break;
 				}
@@ -200,6 +206,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 //		FunctionStartPostAnalyzer funcPostAnalyzer = new FunctionStartPostAnalyzer();
 //		EntryPointAnalyzer entryAnalyzer = new EntryPointAnalyzer();
 //		Disassembler disassembler = Disassembler.getDisassembler(program, monitor, DisassemblerMessageListener.CONSOLE);
+		monitor.setMessage("Analyzing Executables");
 		Memory memory = program.getMemory();
 		Listing listing = program.getListing();
 		Namespace globalNamespace = program.getGlobalNamespace();

@@ -155,7 +155,7 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 			skipPadding(provider, paddingRetain, paddingVal);
 		try {
 			memory.createInitializedBlock("Unassigned and Padding", progBase.add(paddingOffset), 
-					provider.getInputStream(paddingOffset), provider.length() - paddingOffset + 1,
+					provider.getInputStream(paddingOffset), provider.length() - paddingOffset,
 					monitor, false);
 		} catch (LockException e) {
 			// TODO Auto-generated catch block
