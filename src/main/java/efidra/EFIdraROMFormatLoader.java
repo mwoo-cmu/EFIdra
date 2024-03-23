@@ -44,7 +44,7 @@ import ghidra.util.task.TaskMonitor;
 
 public class EFIdraROMFormatLoader {
 	public static final String EFI_ROM_FORMATS_DIR = "rom_formats";
-	private static final String EXEC_ANALYZER_JSON = "ExecutableAnalyzers.json";
+	private static final String EXTENSIONS_JSON = "extensions.json";
 	private static final char ARRAY_OPEN = '[';
 	private static final char ARRAY_CLOSE = ']';
 	private static final char POINTER = '*';
@@ -79,7 +79,7 @@ public class EFIdraROMFormatLoader {
 			}
 			addGhidraDataTypes(program);
 			loadROMFormats(program, monitor);
-			loadDefaultExecutableAnalyzers();
+			loadExtensionScripts();
 		}
 	}
 	
@@ -241,11 +241,18 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
-	public static void loadDefaultExecutableAnalyzers() {
+	public static void loadExtensionScripts() {
 		try {
-			JSONArray analyzerNames = (JSONArray) (new JSONParser().parse(new FileReader(
-				Application.getModuleDataFile(EXEC_ANALYZER_JSON).getFile(true))));
+			JSONObject extData = (JSONObject) (new JSONParser().parse(new FileReader(
+				Application.getModuleDataFile(EXTENSIONS_JSON).getFile(true))));
+			// note that technically these can just be coalesced into one, but 
+			// is kept separate for clarity
+			JSONArray analyzerNames = (JSONArray) extData.get("ExecutableAnalyzers");
 			for (Object name : analyzerNames) {
+				addUserScript((String) name);
+			}
+			JSONArray parserNames = (JSONArray) extData.get("Parsers");
+			for (Object name : parserNames) {
 				addUserScript((String) name);
 			}
 		} catch (FileNotFoundException e) {

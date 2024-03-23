@@ -6,10 +6,17 @@ import static java.util.Map.entry;
 import efidra.EFIdraParserScript;
 import efidra.EFIdraROMFormatLoader;
 import ghidra.app.util.bin.BinaryReader;
+import ghidra.framework.store.LockException;
+import ghidra.program.database.ProgramDB;
+import ghidra.program.database.mem.MemoryMapDB;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressFactory;
 import ghidra.program.model.address.AddressOutOfBoundsException;
+import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.StructureInternal;
 import ghidra.program.model.data.TerminatedUnicodeDataType;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Listing;
@@ -17,10 +24,19 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.mem.MemoryBlockException;
+import ghidra.program.model.mem.MemoryConflictException;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.Msg;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.exception.NotFoundException;
+import ghidra.util.exception.RollbackException;
+import ghidra.util.task.TaskMonitor;
 
 public class PiFirmwareParser extends EFIdraParserScript {
 	// "_FVH" stored little endian
@@ -42,23 +58,26 @@ public class PiFirmwareParser extends EFIdraParserScript {
 	private static byte[] FREE_SPACE_HEADER = new byte[EFI_FF_HEADER_LEN];
 	private EnumDataType EFI_FV_FILETYPE;
 	private EnumDataType EFI_SECTION_TYPE;
-	private StructureDataType EFI_FIRMWARE_VOLUME_HEADER;
-	private StructureDataType EFI_FIRMWARE_VOLUME_EXT_HEADER;
+	private StructureInternal EFI_FIRMWARE_VOLUME_HEADER;
+	private StructureInternal EFI_FIRMWARE_VOLUME_EXT_HEADER;
 	private StructureDataType EFI_FFS_INTEGRITY_CHECK;
 	private StructureDataType EFI_FFS_FILE_HEADER;
 	private StructureDataType EFI_FFS_FILE_HEADER2;
 	private StructureDataType EFI_COMMON_SECTION_HEADER;
 	private StructureDataType EFI_COMMON_SECTION_HEADER2;
+	private boolean structsLoaded = false;
 	
 	private void loadStructures() {
+		if (structsLoaded)
+			return;
 		EFI_FV_FILETYPE = (EnumDataType)
 				EFIdraROMFormatLoader.getType("EFI_FV_FILETYPE");
 		EFI_SECTION_TYPE = (EnumDataType)
 				EFIdraROMFormatLoader.getType("EFI_SECTION_TYPE");
-		EFI_FIRMWARE_VOLUME_HEADER = (StructureDataType) 
-				EFIdraROMFormatLoader.getType("EFI_FIRMWARE_VOLUME_HEADER");
-		EFI_FIRMWARE_VOLUME_EXT_HEADER = (StructureDataType)
-				EFIdraROMFormatLoader.getType("EFI_FIRMWARE_VOLUME_EXT_HEADER");
+		EFI_FIRMWARE_VOLUME_HEADER = (StructureInternal) 
+				EFIdraROMFormatLoader.getType("/PiFirmwareVolume.h/EFI_FIRMWARE_VOLUME_HEADER");
+		EFI_FIRMWARE_VOLUME_EXT_HEADER = (StructureInternal)
+				EFIdraROMFormatLoader.getType("/PiFirmwareVolume.h/EFI_FIRMWARE_VOLUME_EXT_HEADER");
 		EFI_FFS_INTEGRITY_CHECK = (StructureDataType)
 				EFIdraROMFormatLoader.getType("EFI_FFS_INTEGRITY_CHECK");
 		EFI_FFS_FILE_HEADER = (StructureDataType)
@@ -70,6 +89,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 		EFI_COMMON_SECTION_HEADER2 = (StructureDataType)
 				EFIdraROMFormatLoader.getType("EFI_COMMON_SECTION_HEADER2");
 		Arrays.fill(FREE_SPACE_HEADER, (byte)0xff);
+		structsLoaded = true;
 	}
 	
 	private void parseSection(BinaryReader reader, Address progBase, Listing listing,
@@ -132,7 +152,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 //			baseIdx = reader.getPointerIndex();
 			// can't know where to start reading a file, label as non-uefi data
 			ProgramFragment frag = parent.createFragment(
-					"Non-UEFI Data (0x" + Long.toHexString(baseIdx) + ")");
+					"Non-UEFI Data (0x" + Long.toHexString(progBase.getOffset() + baseIdx) + ")");
 			frag.move(progBase.add(baseIdx), progBase.add(fvEnd - 1));
 			reader.setPointerIndex(fvEnd);
 		} else {
@@ -275,8 +295,23 @@ public class PiFirmwareParser extends EFIdraParserScript {
 		}
 	}
 	
-	public void parseROM(Program program) {
+	public void parseROM(Program program, TaskMonitor tMonitor) {
 		loadStructures();
+		monitor = tMonitor;
+		Memory memory = program.getMemory();
+		// assumes that memory starts at 0
+		long memSize = memory.getSize();
+		long memBase = 0x100000000l - memSize;
+		Address minAddr = memory.getMinAddress();
+		Address newBase = minAddr.add(memBase);
+
+		try {
+			program.setImageBase(newBase, true);
+		} catch (AddressOverflowException | LockException | IllegalStateException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
 		BinaryReader reader = getBinaryReader(program);
 		Listing listing = program.getListing();
 		Address progBase = program.getImageBase();
@@ -310,6 +345,27 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		
+		// apply pointers to entry point, fit table
+		AddressFactory addrFactory = program.getAddressFactory();
+		SymbolTable symbolTable = program.getSymbolTable();
+		try {
+			Address fitPtrAddr = addrFactory.getAddress("ffffffc0");
+			listing.createData(fitPtrAddr, PointerDataType.dataType);
+			symbolTable.createLabel(fitPtrAddr, "FIT_Table_Pointer", SourceType.ANALYSIS);
+			
+			Address entryAddr = addrFactory.getAddress("ffffffe0");
+			listing.createData(entryAddr, PointerDataType.dataType);
+			symbolTable.createLabel(entryAddr, "Entry_Address", SourceType.ANALYSIS);
+			// not exactly sure, but in the Dell ROMs points to the volume with the executables
+			listing.createData(addrFactory.getAddress("fffffffc"), PointerDataType.dataType);
+		} catch (CodeUnitInsertionException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (InvalidInputException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 
 	@Override
@@ -334,6 +390,20 @@ public class PiFirmwareParser extends EFIdraParserScript {
 
 	@Override
 	public boolean canParse(Program program) {
+		loadStructures();
+		BinaryReader reader = getBinaryReader(program);
+		
+		// find the start of the ROM excluding all the padding at the beginning
+		// attempt to find signature of first volume
+		try {
+			skipPadding(reader, 0);
+			long curIdx = reader.getPointerIndex() - 16;
+			return (reader.readInt(curIdx + getOffsetToField(
+					EFI_FIRMWARE_VOLUME_HEADER, "Signature")) == EFI_FVH_SIGNATURE);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		return false;
 	}
 }

@@ -192,8 +192,13 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				}
 			}
 		}
-		if (parser != null)
+		if (parser != null) {
 			analyzeExecutablesRecursive(rootModule, program, monitor, log);
+		} else {
+			JPanel panel = new JPanel(new BorderLayout());
+			Msg.showError(this, panel, "No Parser Found", 
+					"None of the available parsers were able to parse this ROM.");
+		}
 		
 		return true;
 	}

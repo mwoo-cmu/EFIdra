@@ -1,0 +1,8 @@
+{
+	"Parsers": [
+		"PiFirmwareParser.java"
+	],
+	"ExecutableAnalyzers": [
+		"PEAnalyzer.java"
+	]
+}

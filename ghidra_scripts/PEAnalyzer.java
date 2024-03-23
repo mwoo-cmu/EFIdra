@@ -3,6 +3,7 @@ import java.util.List;
 
 import efidra.EFIdraExecutableAnalyzerScript;
 import efidra.EFIdraExecutableData;
+import efidra.EFIdraROMFormatLoader;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.format.mz.DOSHeader;
 import ghidra.app.util.bin.format.pe.DataDirectory;
@@ -21,14 +22,21 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.data.DWordDataType;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.LongDataType;
+import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.TerminatedStringDataType;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Group;
 import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Parameter;
+import ghidra.program.model.listing.ParameterImpl;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
+import ghidra.program.model.listing.Variable;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.exception.NotFoundException;
@@ -141,8 +149,19 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 			if (datadir.hasParsedCorrectly()) {
 				datadir.markup(currentProgram, true, monitor, log, nt);
 
-				Address startAddr = PeUtils.getMarkupAddress(currentProgram, true, nt,
-						datadir.getVirtualAddress());
+				// TODO: look at this! This needs to be moved to match 
+				// the real address!
+//				Address startAddr = PeUtils.getMarkupAddress(currentProgram, true, nt,
+//						datadir.getVirtualAddress());
+				int offset = datadir.getVirtualAddress();
+				int ptr = nt.rvaToPointer(offset);
+				Address startAddr;
+				if (ptr < 0 && offset > 0) {//directory does not appear inside a loadable section
+					Msg.error(PeUtils.class, "Invalid RVA " + Integer.toHexString(offset));
+					startAddr = baseAddr.add(offset);
+				} else {
+					startAddr = baseAddr.add(ptr);
+				}
 				createOrAddToFragment(datadir.getDirectoryName(), startAddr, datadir.getSize());
 			}
 		}
@@ -248,7 +267,21 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 			if (textFrag != null) {
 				Address funcBase = textFrag.getMinAddress();
 				disassembler.disassemble(funcBase, textFrag);
-				listing.createFunction("entry", exe.namespace, funcBase, textFrag, SourceType.ANALYSIS);
+				Function uefiMain = listing.createFunction("UefiMain", exe.namespace, funcBase, textFrag, SourceType.ANALYSIS);
+//				Parameter[] params = uefiMain.getParameters();
+//				params[0].setDataType(EFIdraROMFormatLoader.getType("/UefiBaseType.h/EFI_HANDLE"), SourceType.ANALYSIS);
+//				params[1].setDataType(new PointerDataType(EFIdraROMFormatLoader.getType(
+//						"/UefiSpec.h/EFI_SYSTEM_TABLE")), SourceType.ANALYSIS);
+				Variable efiHandle = new ParameterImpl("ImageHandle", 
+						EFIdraROMFormatLoader.getType("/UefiBaseType.h/EFI_HANDLE"), 
+						currentProgram);
+				Variable systemTable = new ParameterImpl("SystemTable",
+						new PointerDataType(EFIdraROMFormatLoader.getType(
+								"/UefiSpec.h/EFI_SYSTEM_TABLE")), currentProgram);
+				uefiMain.replaceParameters(Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS, 
+						true, SourceType.ANALYSIS, efiHandle, systemTable);
+				uefiMain.setReturnType(EFIdraROMFormatLoader.getType(
+						"/UefiBaseType.h/EFI_STATUS"), SourceType.ANALYSIS);
 			}
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
