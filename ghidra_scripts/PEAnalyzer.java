@@ -1,9 +1,17 @@
+import java.awt.BorderLayout;
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.List;
+
+import javax.swing.JPanel;
 
 import efidra.EFIdraExecutableAnalyzerScript;
 import efidra.EFIdraExecutableData;
 import efidra.EFIdraROMFormatLoader;
+import ghidra.app.decompiler.ClangNode;
+import ghidra.app.decompiler.ClangTokenGroup;
+import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.format.mz.DOSHeader;
 import ghidra.app.util.bin.format.pe.DataDirectory;
@@ -22,9 +30,13 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.data.DWordDataType;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.FunctionDefinition;
 import ghidra.program.model.data.LongDataType;
+import ghidra.program.model.data.ParameterDefinition;
+import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.TerminatedStringDataType;
+import ghidra.program.model.data.VoidDataType;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
@@ -35,7 +47,16 @@ import ghidra.program.model.listing.ParameterImpl;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.listing.Variable;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.pcode.HighGlobal;
+import ghidra.program.model.pcode.HighVariable;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.PcodeOpAST;
+import ghidra.program.model.pcode.Varnode;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
@@ -48,6 +69,18 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 	// copied from https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/java/ghidra/app/cmd/formats/PortableExecutableBinaryAnalysisCommand.java
 	
 	private final String TEXT_FRAG_NAME = ".text_DATA_";
+	
+	private final String BOOT_SERVICES_TYPE_NAME = "EFI_BOOT_SERVICES *";
+	private final String BOOT_SERVICES_VAR_NAME = "gBS";
+	private final String EFI_HANDLE_TYPE_NAME = "EFI_HANDLE";
+	private final String EFI_HANDLE_VAR_NAME = "gImageHandle";
+	private final String RUNTIME_SERVICES_TYPE_NAME = "EFI_RUNTIME_SERVICES *";
+	private final String RUNTIME_SERVICES_VAR_NAME = "gRT";
+	private final String SYSTEM_TABLE_TYPE_NAME = "EFI_SYSTEM_TABLE *";
+	private final String SYSTEM_TABLE_VAR_NAME = "gST";
+	
+	private final String LOCATE_PROTOCOL = "EFI_LOCATE_PROTOCOL";
+	private final String INSTALL_PROTOCOL = "EFI_INSTALL_PROTOCOL_INTERFACE";
 	
 	private Address baseAddr;
 	private Listing listing;
@@ -233,6 +266,78 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 		}
 	}
 
+	private void findUEFIGlobals(PcodeOpAST op, SymbolTable symbolTable, Namespace namespace) 
+			throws CodeUnitInsertionException, InvalidInputException {
+		Varnode outVar = op.getOutput();
+		HighVariable output = outVar.getHigh();
+		DataType assignType = op.getInput(0).getHigh().getDataType();
+		String asgTypeName = assignType.getName();
+		if (output instanceof HighGlobal) {
+			// assign UEFI globals
+			Address globalAddr = outVar.getAddress();
+			String globalName;
+			if (BOOT_SERVICES_TYPE_NAME.equals(asgTypeName)) {
+				globalName = BOOT_SERVICES_VAR_NAME;
+			} else if (EFI_HANDLE_TYPE_NAME.equals(asgTypeName)) {
+				globalName = EFI_HANDLE_VAR_NAME;
+			} else if (RUNTIME_SERVICES_TYPE_NAME.equals(asgTypeName)) {
+				globalName = RUNTIME_SERVICES_VAR_NAME;
+			} else if (SYSTEM_TABLE_TYPE_NAME.equals(asgTypeName)) {
+				globalName = SYSTEM_TABLE_VAR_NAME;
+			} else {
+				return;
+			}
+			// set type and label for relevant globals
+			listing.createData(globalAddr, assignType);
+			symbolTable.createLabel(globalAddr, globalName, namespace, SourceType.ANALYSIS);
+		}
+	}
+	
+	private void findUEFIFuncs(PcodeOpAST op) {
+		// likely calls through system table
+		Varnode funcVarnode = op.getInput(0);
+		HighVariable funcVar = funcVarnode.getHigh();
+		DataType funcType = funcVar.getDataType();
+		String funcTypeName = funcType.getName();
+		if (INSTALL_PROTOCOL.equals(funcTypeName)) {
+			if (funcType instanceof FunctionDefinition) {
+				FunctionDefinition funcDef = (FunctionDefinition) funcType;
+				ParameterDefinition[] args = new ParameterDefinition[] {
+					new ParameterDefinitionImpl("Handle", 
+							new PointerDataType(EFIdraROMFormatLoader.getType(
+									"/UefiBaseType.h/EFI_HANDLE")), 
+							"A pointer to the EFI_HANDLE on which the interface is to be installed."),
+					new ParameterDefinitionImpl("Protocol", 
+							new PointerDataType(EFIdraROMFormatLoader.getType("EFI_GUID")),
+							"The numeric ID of the protocol interface."),
+					new ParameterDefinitionImpl("InterfaceType",
+							EFIdraROMFormatLoader.getType("/UefiSpec.h/EFI_INTERFACE_TYPE"),
+							"Indicates whether Interface is supplied in native form."),
+					new ParameterDefinitionImpl("Interface",
+							new PointerDataType(VoidDataType.dataType),
+							"A pointer to the protocol interface.")
+				};
+				funcDef.setArguments(args);
+			}
+		} else if (LOCATE_PROTOCOL.equals(funcTypeName)) {
+			if (funcType instanceof FunctionDefinition) {
+				FunctionDefinition funcDef = (FunctionDefinition) funcType;
+				ParameterDefinition[] args = new ParameterDefinition[] {
+					new ParameterDefinitionImpl("Protocol", 
+							new PointerDataType(EFIdraROMFormatLoader.getType("EFI_GUID")),
+							"The numeric ID of the protocol interface."),
+					new ParameterDefinitionImpl("Registration",
+							new PointerDataType(VoidDataType.dataType),
+							"Indicates whether Interface is supplied in native form."),
+					new ParameterDefinitionImpl("Interface",
+							new PointerDataType(new PointerDataType(VoidDataType.dataType)),
+							"A pointer to the protocol interface.")
+				};
+				funcDef.setArguments(args);
+			}
+		}
+	}
+	
 	@Override
 	public void analyzeExecutable(EFIdraExecutableData exe, MessageLog log, TaskMonitor tMonitor) {
 		monitor = tMonitor;
@@ -268,10 +373,7 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 				Address funcBase = textFrag.getMinAddress();
 				disassembler.disassemble(funcBase, textFrag);
 				Function uefiMain = listing.createFunction("UefiMain", exe.namespace, funcBase, textFrag, SourceType.ANALYSIS);
-//				Parameter[] params = uefiMain.getParameters();
-//				params[0].setDataType(EFIdraROMFormatLoader.getType("/UefiBaseType.h/EFI_HANDLE"), SourceType.ANALYSIS);
-//				params[1].setDataType(new PointerDataType(EFIdraROMFormatLoader.getType(
-//						"/UefiSpec.h/EFI_SYSTEM_TABLE")), SourceType.ANALYSIS);
+//				Apply UefiMain function signature
 				Variable efiHandle = new ParameterImpl("ImageHandle", 
 						EFIdraROMFormatLoader.getType("/UefiBaseType.h/EFI_HANDLE"), 
 						currentProgram);
@@ -282,6 +384,36 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 						true, SourceType.ANALYSIS, efiHandle, systemTable);
 				uefiMain.setReturnType(EFIdraROMFormatLoader.getType(
 						"/UefiBaseType.h/EFI_STATUS"), SourceType.ANALYSIS);
+				
+				
+				DecompInterface ifc = new DecompInterface();
+				ifc.openProgram(currentProgram);
+				DecompileResults res = ifc.decompileFunction(uefiMain, 0, tMonitor);
+				
+				if (!res.decompileCompleted()) {
+					JPanel panel = new JPanel(new BorderLayout());
+					Msg.showError(this, panel, "Error Decompiling Executable", 
+							"Encountered an error while decompiling " + exe.name);
+					Msg.error(this, res.getErrorMessage());
+					return;
+				}
+				
+				HighFunction hFunc = res.getHighFunction();
+				Iterator<PcodeOpAST> pCodeOps = hFunc.getPcodeOps();
+				SymbolTable symbolTable = currentProgram.getSymbolTable();
+				while (pCodeOps.hasNext()) {
+					PcodeOpAST op = pCodeOps.next();
+					int opCode = op.getOpcode();
+					if (opCode == PcodeOp.COPY) {
+						findUEFIGlobals(op, symbolTable, exe.namespace);
+					} else if (opCode == PcodeOp.CALLIND) {
+						findUEFIFuncs(op);
+					}
+				}
+//				ClangTokenGroup tokens = res.getCCodeMarkup();
+//				for (int i = 0; i < tokens.numChildren(); i++) {
+//					ClangNode token = tokens.Child(i);
+//				}
 			}
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
