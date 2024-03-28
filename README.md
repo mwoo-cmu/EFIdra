@@ -60,6 +60,25 @@ Each structure should be a JSON object with the following keys (example from [da
 }
 ```
 
+A enumeration maybe be defined in the `structures` array by using the "enum" tag instead of the "members" tag.
+
+```json
+{
+	// The name of the enum type
+	"name": "EFI_SECTION_TYPE",
+	// all of the enum names and their values
+	"enum": {
+		"EFI_SECTION_ALL": 0,
+		"EFI_SECTION_COMPRESSION": 1,
+		"EFI_SECTION_GUID_DEFINED": 2,
+		"EFI_SECTION_PE32": 16,
+		"EFI_SECTION_PIC": 17,
+		...
+	}
+}
+
+```
+
 Note that in practice, comments cannot be included in the JSON file, but these are here for explanation purposes.
 
 All structures defined in these are added to the Data Type Manager and are visible in the Code Browser.

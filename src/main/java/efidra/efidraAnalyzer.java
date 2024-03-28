@@ -154,20 +154,6 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		parser = EFIdraROMFormatLoader.parsers.get(pScript);
 	}
 	
-	private void parseNVRAMStructures(ProgramFragment programFragment, Listing listing, Memory memory) throws IOException, CodeUnitInsertionException {
-		Address fragBase = programFragment.getMinAddress();
-		BinaryReader fragReader = new BinaryReader(
-				new MemoryByteProvider(memory, fragBase), true);
-		// ensure that the first 4 bytes are the "NVAR" signature
-		if (fragReader.peekNextInt() != EFINVAREntry.EFI_NVAR_SIGNATURE) {
-			return;
-		}
-		
-		// set up first "NVAR" string
-		listing.createData(fragBase, StringDataType.dataType, 4);
-	}
-	
-	
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
@@ -248,7 +234,7 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 						// allow users to define/choose analyzers too
 						for (EFIdraExecutableAnalyzerScript s : EFIdraROMFormatLoader.execAnalyzers) {
 							if (s.canAnalyze(provider))
-								s.analyzeExecutable(eData, log, monitor);
+								s.initAndAnalyze(eData, log, monitor);
 						}
 						
 						

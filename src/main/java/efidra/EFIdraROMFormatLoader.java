@@ -37,6 +37,7 @@ import ghidra.program.model.data.FileDataTypeManager;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Undefined;
+import ghidra.program.model.data.VoidDataType;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
@@ -55,6 +56,11 @@ public class EFIdraROMFormatLoader {
 	public static List<EFIdraExecutableAnalyzerScript> execAnalyzers = new ArrayList<>();
 	public static HashMap<String, EFIdraParserScript> parsers = new HashMap<>();
 	
+	/**
+	 * Adds all of the Ghidra built-in data types from the given program
+	 * @param program The program from which to load in all of the built-in 
+	 * data types
+	 */
 	private static void addGhidraDataTypes(Program program) {
 		Iterator<DataType> iter = program.getDataTypeManager().getAllDataTypes();
 		// for some reason only 5...
@@ -69,6 +75,14 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
+	/**
+	 * initializes the ROM format loader for the given program by reading in 
+	 * all of the ROM formats from the default directory (data/rom_formats) and
+	 * adding all of the analyzer and parser scripts as defined in 
+	 * data/extensions.json
+	 * @param program The program to load data structures into
+	 * @param monitor The monitor for this initialization job
+	 */
 	public static void init(Program program, TaskMonitor monitor) {
 		if (formatsDir == null) {
 			try {
@@ -83,6 +97,13 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
+	/**
+	 * Parses an array data type recursively, to create an arbitrary number of
+	 * arrays from the String type name. Note that the sizes of arrays must be 
+	 * specified for proper construction of the array type.
+	 * @param type the String of the array type (e.g. int[4])
+	 * @return the ArrayDataType, or the resolved type if it is not an array
+	 */
 	private static DataType parseArrayRecursive(String type) {
 		if (type.charAt(type.length() - 1) == ARRAY_CLOSE) {
 			int arrayIdx = type.lastIndexOf(ARRAY_OPEN);
@@ -95,6 +116,12 @@ public class EFIdraROMFormatLoader {
 		return dataTypes.get(type);
 	}
 	
+	/**
+	 * Parses a pointer data type recursively, to create an arbitrary number of
+	 * pointers from a String type name
+	 * @param type the String of the pointer type (e.g. "void*")
+	 * @return The PointerDataType, or the resolved type if it is not a pointer
+	 */
 	private static DataType parsePointerRecursive(String type) {
 		if (type.charAt(type.length() - 1) == POINTER) {
 			int endIdx = type.lastIndexOf(POINTER);
@@ -105,6 +132,13 @@ public class EFIdraROMFormatLoader {
 		return dataTypes.get(type);
 	}
 	
+	/**
+	 * Parses a StructureDataType from the given JSON array of members with the
+	 * given name, as defined in the JSON structure specification
+	 * @param name The name of the data type to parse
+	 * @param members The members of the data type, in order
+	 * @return The DataType generated from reading in the members
+	 */
 	public static DataType parseDataType(String name, JSONArray members) {
 		StructureDataType sdt = new StructureDataType(name, 0, dtm);
 		for (Object memberObj : members) {
@@ -138,6 +172,13 @@ public class EFIdraROMFormatLoader {
 		return sdt;
 	}
 	
+	/**
+	 * Parses a JSON object representing an enumeration in the JSON structure
+	 * specification
+	 * @param name the name of the enum type to add
+	 * @param enumMembers the JSONObject representing the enum members
+	 * @return the EnumDataType representation of the enum
+	 */
 	public static EnumDataType parseEnumType(String name, JSONObject enumMembers) {
 		// determine how many bytes are needed to hold all enum values
 		long maxVal = (long) Collections.max(enumMembers.values());
@@ -156,6 +197,10 @@ public class EFIdraROMFormatLoader {
 		return edt;
 	}
 	
+	/**
+	 * Loads in structures from a given JSON file
+	 * @param file the JSON file to load in structures from 
+	 */
 	private static void loadJSON(File file) {
 		try {
 			JSONObject format = (JSONObject) (new JSONParser().parse(new FileReader(file)));
@@ -199,11 +244,27 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
+	/**
+	 * Loads in a specific JSON file ROM format from the default ROM format
+	 * directory into the given program
+	 * @param program The program to which the data types read from the ROM 
+	 * format JSON should be added
+	 * @param jsonFile The filename of the JSON ROM format file to load in
+	 * @throws FileNotFoundException if the file was not found in the ROM
+	 * format directory
+	 */
 	public static void loadROMFormat(Program program, String jsonFile) throws FileNotFoundException {
 		ResourceFile f = Application.getModuleDataFile(EFI_ROM_FORMATS_DIR + "/" + jsonFile);
 		loadJSON(f.getFile(true));
 	}
 	
+	/**
+	 * Loads all ROM formats in the default format directory (data/rom_formats)
+	 * into the program using the given monitor
+	 * @param program The program to which the data types read from ROM formats
+	 * should be added
+	 * @param monitor The monitor for this load task
+	 */
 	public static void loadROMFormats(Program program, TaskMonitor monitor) {
 		dtm = program.getDataTypeManager();
 		for (File file : formatsDir.listFiles()) {
@@ -214,6 +275,7 @@ public class EFIdraROMFormatLoader {
 				} else if (fName.endsWith(".gdt")) {
 					try {
 						FileDataTypeManager fdtm = FileDataTypeManager.openFileArchive(file, false);
+						Msg.info(null, fdtm.getPointer(VoidDataType.dataType).getLength());
 						List<DataType> fDataTypes = new ArrayList<>();
 						fdtm.getAllDataTypes(fDataTypes);
 						dtm.addDataTypes(fDataTypes, 
@@ -241,6 +303,10 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 	
+	/**
+	 * Loads in all of the extension scripts for executable analysis and ROM 
+	 * parsing as defined in the data/extensions.json file
+	 */
 	public static void loadExtensionScripts() {
 		try {
 			JSONObject extData = (JSONObject) (new JSONParser().parse(new FileReader(
@@ -291,6 +357,15 @@ public class EFIdraROMFormatLoader {
 //		}
 //	}
 	
+	/**
+	 * Adds a GhidraScript specified by name as either an executable analyzer 
+	 * or a ROM parser, depending on which class it extends. Does nothing if 
+	 * the specified script does not extend either EFIdraParserScript or 
+	 * EFIdraExecutableAnalyzerScript.
+	 * @param name The name of the script to add
+	 * @throws GhidraScriptLoadException if the script could not be loaded
+	 * @throws IOException if the script could not be read
+	 */
 	public static void addUserScript(String name) throws GhidraScriptLoadException, IOException {
 		ResourceFile scriptFile = GhidraScriptUtil.findScriptByName(name);
 		// not GhidraScript, .java file in data/rom_formats directory
@@ -311,6 +386,12 @@ public class EFIdraROMFormatLoader {
 		}
 	}
 
+	/**
+	 * Gets the DataType object of the given type name, loaded in from the ROM
+	 * format data types
+	 * @param typeName The name of the type to retrieve
+	 * @return the DataType object defining the given type name
+	 */
 	public static DataType getType(String typeName) {
 		DataType type = dataTypes.get(typeName);
 		if (type == null) {

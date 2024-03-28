@@ -340,7 +340,6 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 	
 	@Override
 	public void analyzeExecutable(EFIdraExecutableData exe, MessageLog log, TaskMonitor tMonitor) {
-		monitor = tMonitor;
 		Disassembler disassembler = Disassembler.getDisassembler(exe.parentROM, monitor, DisassemblerMessageListener.CONSOLE);
 		if (pe == null) {
 			try {
@@ -360,7 +359,6 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 			}
 		}
 		baseAddr = exe.baseAddr;
-		currentProgram = exe.parentROM;
 		listing = exe.parentROM.getListing();
 		messages = log;
 		progRoot = exe.programTree;
@@ -386,9 +384,7 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 						"/UefiBaseType.h/EFI_STATUS"), SourceType.ANALYSIS);
 				
 				
-				DecompInterface ifc = new DecompInterface();
-				ifc.openProgram(currentProgram);
-				DecompileResults res = ifc.decompileFunction(uefiMain, 0, tMonitor);
+				DecompileResults res = decompileFunction(uefiMain, 0, tMonitor);
 				
 				if (!res.decompileCompleted()) {
 					JPanel panel = new JPanel(new BorderLayout());
