@@ -1,11 +1,25 @@
 package efidra;
 
+import java.util.List;
+
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.script.GhidraScript;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.framework.store.LockException;
+import ghidra.program.disassemble.Disassembler;
+import ghidra.program.disassemble.DisassemblerMessageListener;
+import ghidra.program.model.lang.CompilerSpecID;
+import ghidra.program.model.lang.Language;
+import ghidra.program.model.lang.LanguageDescription;
+import ghidra.program.model.lang.LanguageID;
+import ghidra.program.model.lang.LanguageNotFoundException;
+import ghidra.program.model.lang.Processor;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.IncompatibleLanguageException;
+import ghidra.program.model.listing.Program;
+import ghidra.program.util.DefaultLanguageService;
 import ghidra.util.task.TaskMonitor;
 
 public abstract class EFIdraExecutableAnalyzerScript extends GhidraScript {
@@ -74,6 +88,142 @@ public abstract class EFIdraExecutableAnalyzerScript extends GhidraScript {
 		monitor = tMonitor;
 		currentProgram = exe.parentROM;
 		analyzeExecutable(exe, log, tMonitor);
+	}
+	
+	/**
+	 * Gets a disassembler for the currentProgram using its language
+	 * @return The disassembler for the currentProgram
+	 */
+	protected Disassembler getDisassembler() {
+		return Disassembler.getDisassembler(currentProgram, monitor, DisassemblerMessageListener.CONSOLE);
+	}
+	
+	/**
+	 * Gets a disassembler for the program using its language
+	 * @param program The program to disassemble
+	 * @return The disassembler for the given program
+	 */
+	protected Disassembler getDisassembler(Program program) {
+		return Disassembler.getDisassembler(program, monitor, DisassemblerMessageListener.CONSOLE);
+	}
+	
+//	/**
+//	 * Gets a disassembler for the program using the given language
+//	 * @param program The program to disassemble
+//	 * @param language The language to use for disassembly
+//	 * @return The disassembler of the given language for the given program
+//	 * @throws IncompatibleLanguageException 
+//	 * @throws LockException 
+//	 * @throws IllegalStateException 
+//	 */
+//	protected Disassembler getDisassembler(Program program, Language language) 
+//			throws IllegalStateException, LockException, IncompatibleLanguageException {
+//		Language oldLang = program.getLanguage();
+//		CompilerSpecID csId = program.getCompilerSpec().getCompilerSpecID();
+//		program.setLanguage(language, csId, false, monitor);
+//		Disassembler dis = Disassembler.getDisassembler(program, monitor, DisassemblerMessageListener.CONSOLE);
+//		program.setLanguage(oldLang, csId, false, monitor);
+//		return dis;
+////		return Disassembler.getDisassembler(language, program.getAddressFactory(), monitor, DisassemblerMessageListener.CONSOLE);
+//	}
+	
+	/**
+	 * Gets the first language which matches the given processor, word size,
+	 * and variant 
+	 * @param processor The processor type of the language
+	 * @param size The word size (should be 32 for 32-bit or 64 for 64-bit)
+	 * @param variant The variant of the language
+	 * @return The first language found which matches the processor, size, and
+	 * variant
+	 * @throws LanguageNotFoundException If no matching language can be found
+	 */
+	protected Language getLanguage(Processor processor, int size, String variant) 
+			throws LanguageNotFoundException {
+		List<LanguageDescription> langDescs = 
+				DefaultLanguageService.getLanguageService().getLanguageDescriptions(processor);
+		for (LanguageDescription langDesc : langDescs) {
+			if (langDesc.getEndian().isBigEndian()) {
+				// UEFI does not support big endian
+				continue;
+			}
+			if (langDesc.getSize() == 16) {
+				// UEFI does not support 16 bit
+				continue;
+			}
+			if (size != 0 && langDesc.getSize() != size) {
+				// size is given, need to find a language that matches
+				continue;
+			}
+			if (variant != null && !variant.equals(langDesc.getVariant())) {
+				// variant is given, need to find a language that matches
+				continue;
+			}
+			return getLanguage(langDesc.getLanguageID());
+		}
+		throw new LanguageNotFoundException(processor);
+	}
+	
+	/**
+	 * Gets the first language which matches the given processor and word size 
+	 * @param processor The processor type of the language
+	 * @param size The word size (should be 32 for 32-bit or 64 for 64-bit)
+	 * @return The first language found which matches the processor and size
+	 * @throws LanguageNotFoundException If no matching language can be found
+	 */
+	protected Language getLanguage(Processor processor, int size) 
+			throws LanguageNotFoundException {
+		return getLanguage(processor, size, null);
+	}
+	
+	/**
+	 * Gets the first language which matches the given processor and variant 
+	 * @param processor The processor type of the language
+	 * @param variant The variant of the language
+	 * @return The first language found which matches the processor and variant
+	 * @throws LanguageNotFoundException If no matching language can be found
+	 */
+	protected Language getLanguage(Processor processor, String variant) 
+			throws LanguageNotFoundException {
+		return getLanguage(processor, 0, variant);
+	}
+	
+	/**
+	 * Gets the first language which matches the given processor, word size,
+	 * and variant 
+	 * @param processor The name of the processor type of the language
+	 * @param size The word size (should be 32 for 32-bit or 64 for 64-bit)
+	 * @param variant The variant of the language
+	 * @return The first language found which matches the processor, size, and
+	 * variant
+	 * @throws LanguageNotFoundException If no matching language can be found
+	 */
+	protected Language getLanguage(String processor, int size, String variant) 
+			throws LanguageNotFoundException {
+		return getLanguage(Processor.toProcessor(processor), size, variant);
+	}
+	
+	/**
+	 * Gets the first language which matches the given processor and word size 
+	 * @param processor The name of the processor type of the language
+	 * @param size The word size (should be 32 for 32-bit or 64 for 64-bit)
+	 * @return The first language found which matches the processor and size
+	 * @throws LanguageNotFoundException If no matching language can be found
+	 */
+	protected Language getLanguage(String processor, int size) 
+			throws LanguageNotFoundException {
+		return getLanguage(processor, size, null);
+	}
+	
+	/**
+	 * Gets the first language which matches the given processor and variant 
+	 * @param processor The name of the processor type of the language
+	 * @param variant The variant of the language
+	 * @return The first language found which matches the processor and variant
+	 * @throws LanguageNotFoundException If no matching language can be found
+	 */
+	protected Language getLanguage(String processor, String variant) 
+			throws LanguageNotFoundException {
+		return getLanguage(processor, 0, variant);
 	}
 	
 	@Override

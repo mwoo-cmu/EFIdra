@@ -38,6 +38,7 @@ import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Undefined;
 import ghidra.program.model.data.VoidDataType;
+import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
@@ -258,6 +259,18 @@ public class EFIdraROMFormatLoader {
 		loadJSON(f.getFile(true));
 	}
 	
+	private static int getWordSize(String formatName) {
+		String fName = formatName.split("\\.")[0];
+		int i;
+		int last = fName.length() - 1;
+		for (i = last; i >= 0; i--)
+			if (!Character.isDigit(fName.charAt(i)))
+				break;
+		if (i == last)
+			return 0;
+		return Integer.parseInt(fName.substring(i + 1));
+	}
+	
 	/**
 	 * Loads all ROM formats in the default format directory (data/rom_formats)
 	 * into the program using the given monitor
@@ -267,15 +280,27 @@ public class EFIdraROMFormatLoader {
 	 */
 	public static void loadROMFormats(Program program, TaskMonitor monitor) {
 		dtm = program.getDataTypeManager();
+		int wordSize = 64;
+		try {
+			wordSize = program.getLanguageCompilerSpecPair().getLanguageDescription().getSize();
+		} catch (LanguageNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		for (File file : formatsDir.listFiles()) {
 			if (file.isFile()) {
 				String fName = file.getName();
+				// only pull files that are the same word size or have no 
+				// specified word size
+				int fSize = getWordSize(fName);
+				if (fSize != 0 && fSize != wordSize) {
+					continue;
+				}
 				if (fName.endsWith(".json")) {
 					loadJSON(file);
 				} else if (fName.endsWith(".gdt")) {
 					try {
 						FileDataTypeManager fdtm = FileDataTypeManager.openFileArchive(file, false);
-						Msg.info(null, fdtm.getPointer(VoidDataType.dataType).getLength());
 						List<DataType> fDataTypes = new ArrayList<>();
 						fdtm.getAllDataTypes(fDataTypes);
 						dtm.addDataTypes(fDataTypes, 

@@ -1,5 +1,6 @@
 import java.awt.BorderLayout;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
@@ -8,6 +9,7 @@ import javax.swing.JPanel;
 import efidra.EFIdraExecutableAnalyzerScript;
 import efidra.EFIdraExecutableData;
 import efidra.EFIdraROMFormatLoader;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.ClangNode;
 import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
@@ -24,6 +26,7 @@ import ghidra.app.util.bin.format.pe.SectionHeader;
 import ghidra.app.util.bin.format.pe.PortableExecutable.SectionLayout;
 import ghidra.app.util.bin.format.pe.debug.DebugCOFFSymbol;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.program.database.function.OverlappingFunctionException;
 import ghidra.program.disassemble.Disassembler;
 import ghidra.program.disassemble.DisassemblerMessageListener;
 import ghidra.program.model.address.Address;
@@ -37,6 +40,7 @@ import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.TerminatedStringDataType;
 import ghidra.program.model.data.VoidDataType;
+import ghidra.program.model.lang.LanguageID;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
@@ -95,6 +99,10 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 		if (nt == null) {
 			return false;
 		}
+		
+		// maybe we can get the machine data and figure out 32/64-bit and then
+		// use that for disassembly?
+		// nt.getFileHeader().getMachine();
 
 		processDOSHeader(dos);
 		processNTHeader(dos, nt);
@@ -338,9 +346,73 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 		}
 	}
 	
+	private void propagateFunctionParameters(PcodeOpAST op, Namespace namespace) 
+			throws InvalidInputException, DuplicateNameException {
+		Varnode funcVarnode = op.getInput(0);
+//		HighVariable funcVar = funcVarnode.getHigh();
+//		DataType fType = funcVar.getDataType();
+//		if (!(fType instanceof FunctionDefinition))
+//			return;
+		Address fAddr = funcVarnode.getAddress();
+		if (listing.getFunctionAt(fAddr) != null)
+			return;
+		try {
+			Function func = listing.createFunction("FUN_" + fAddr.toString(), namespace, fAddr, 
+					CreateFunctionCmd.getFunctionBody(currentProgram, fAddr, monitor), 
+					SourceType.ANALYSIS);
+			List<ParameterImpl> parameters = new ArrayList<>();
+			for (int i = 1; i < op.getNumInputs(); i++) {
+				Varnode node = op.getInput(i);
+				HighVariable hVar = node.getHigh();
+				String pName = hVar.getName();
+				if (pName == null || "UNNAMED".equals(pName))
+					pName = "param" + i;;
+				parameters.add(new ParameterImpl(pName, hVar.getDataType(), 
+						currentProgram));
+			}
+			func.replaceParameters(parameters, 
+					Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS, 
+					true, SourceType.ANALYSIS);
+			
+			// propagate down to calls made by this function
+			decompileAndAnalyze(func, namespace);
+		} catch (OverlappingFunctionException e) {
+			e.printStackTrace();
+		} catch (CodeUnitInsertionException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private void decompileAndAnalyze(Function function, Namespace namespace) 
+			throws CodeUnitInsertionException, InvalidInputException, DuplicateNameException {
+		DecompileResults res = decompileFunction(function, 0, monitor);
+		
+		if (!res.decompileCompleted()) {
+			JPanel panel = new JPanel(new BorderLayout());
+			Msg.showError(this, panel, "Error Decompiling Executable", 
+					"Encountered an error while decompiling " + progName);
+			Msg.error(this, res.getErrorMessage());
+			return;
+		}
+		
+		HighFunction hFunc = res.getHighFunction();
+		Iterator<PcodeOpAST> pCodeOps = hFunc.getPcodeOps();
+		SymbolTable symbolTable = currentProgram.getSymbolTable();
+		while (pCodeOps.hasNext()) {
+			PcodeOpAST sOp = pCodeOps.next();
+			int opCode = sOp.getOpcode();
+			if (opCode == PcodeOp.COPY) {
+				findUEFIGlobals(sOp, symbolTable, namespace);
+			} else if (opCode == PcodeOp.CALLIND) {
+				findUEFIFuncs(sOp);
+			} else if (opCode == PcodeOp.CALL) {
+				propagateFunctionParameters(sOp, namespace);
+			}
+		}
+	}
+	
 	@Override
 	public void analyzeExecutable(EFIdraExecutableData exe, MessageLog log, TaskMonitor tMonitor) {
-		Disassembler disassembler = Disassembler.getDisassembler(exe.parentROM, monitor, DisassemblerMessageListener.CONSOLE);
 		if (pe == null) {
 			try {
 				pe = new PortableExecutable(exe.provider, SectionLayout.MEMORY);
@@ -369,8 +441,11 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 			ProgramFragment textFrag = getFragment(TEXT_FRAG_NAME + exe.name);
 			if (textFrag != null) {
 				Address funcBase = textFrag.getMinAddress();
+				Disassembler disassembler = getDisassembler(exe.parentROM);
 				disassembler.disassemble(funcBase, textFrag);
-				Function uefiMain = listing.createFunction("UefiMain", exe.namespace, funcBase, textFrag, SourceType.ANALYSIS);
+				Function uefiMain = listing.createFunction("UefiMain", exe.namespace, funcBase, 
+						CreateFunctionCmd.getFunctionBody(currentProgram, funcBase, tMonitor), 
+						SourceType.ANALYSIS);
 //				Apply UefiMain function signature
 				Variable efiHandle = new ParameterImpl("ImageHandle", 
 						EFIdraROMFormatLoader.getType("/UefiBaseType.h/EFI_HANDLE"), 
@@ -384,32 +459,7 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 						"/UefiBaseType.h/EFI_STATUS"), SourceType.ANALYSIS);
 				
 				
-				DecompileResults res = decompileFunction(uefiMain, 0, tMonitor);
-				
-				if (!res.decompileCompleted()) {
-					JPanel panel = new JPanel(new BorderLayout());
-					Msg.showError(this, panel, "Error Decompiling Executable", 
-							"Encountered an error while decompiling " + exe.name);
-					Msg.error(this, res.getErrorMessage());
-					return;
-				}
-				
-				HighFunction hFunc = res.getHighFunction();
-				Iterator<PcodeOpAST> pCodeOps = hFunc.getPcodeOps();
-				SymbolTable symbolTable = currentProgram.getSymbolTable();
-				while (pCodeOps.hasNext()) {
-					PcodeOpAST op = pCodeOps.next();
-					int opCode = op.getOpcode();
-					if (opCode == PcodeOp.COPY) {
-						findUEFIGlobals(op, symbolTable, exe.namespace);
-					} else if (opCode == PcodeOp.CALLIND) {
-						findUEFIFuncs(op);
-					}
-				}
-//				ClangTokenGroup tokens = res.getCCodeMarkup();
-//				for (int i = 0; i < tokens.numChildren(); i++) {
-//					ClangNode token = tokens.Child(i);
-//				}
+				decompileAndAnalyze(uefiMain, exe.namespace);
 			}
 		} catch (Exception e) {
 			// TODO Auto-generated catch block

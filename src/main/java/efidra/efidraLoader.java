@@ -101,8 +101,8 @@ public class efidraLoader extends AbstractProgramWrapperLoader {
 									compDesc.getCompilerSpecID()), false));
 				}
 			}
-//			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair()))
 		}
+//		loadSpecs.add(new LoadSpec(this, 0, false));
 //		}
 		
 		return loadSpecs;

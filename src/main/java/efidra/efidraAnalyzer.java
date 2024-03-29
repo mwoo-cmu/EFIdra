@@ -46,6 +46,8 @@ import ghidra.program.disassemble.DisassemblerMessageListener;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.StringDataType;
+import ghidra.program.model.lang.Processor;
+import ghidra.program.model.lang.ProcessorNotFoundException;
 import ghidra.program.model.listing.Group;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -76,14 +78,18 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 	
 	private static final String PARSER_OPTION = "Parser Script";
 	private static final String ALL_PARSERS = "all";
-	private static final String OFFSET_OPTION = "Image Offset (Hex)";
+//	private static final String OFFSET_OPTION = "Image Offset (Hex)";
+//	private static final String PROCESSOR_OPTION = "Processor Name";
+//	private static final String WORD_SIZE_OPTION = "32-bit or 64-bit?";
 	
 	public static final String NVRAM_GUID = "CEF5B9A3-476D-497F-9FDC-E98143E0422C";
 	
-	private Address programBase;
-	private EFIGUIDs guids;
+//	private Address programBase;
+//	private EFIGUIDs guids;
 	public static EFIdraParserScript parser;
-	private static long baseAddr;
+//	private static long baseAddr;
+//	private static String processor = "x86";
+//	private static long wordSize = 32;
 
 	public efidraAnalyzer() {
 
@@ -119,6 +125,12 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 		options.registerOption(PARSER_OPTION, ALL_PARSERS, null,
 			"The name of the ROM parser script to use (should extend EFIdraParserScript)");
 		
+//		options.registerOption(PROCESSOR_OPTION, "x86", null, 
+//			"The name of the Processor architecture of this ROM (x86, AARCH64, etc.)");
+//		
+//		options.registerOption(WORD_SIZE_OPTION, 32, null, 
+//			"The default instruction size for this ROM (32-bit or 64-bit)");
+		
 		// option for offset to where the image base should be?
 //		options.registerOption(OFFSET_OPTION, "FE000000", null, 
 //			"The base address at which this ROM image is loaded, in hexadecimal");
@@ -147,11 +159,26 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 				} catch (GhidraScriptLoadException | IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
-//					JPanel panel = new JPanel(new BorderLayout());
-//					Msg.showError(e, panel, "Error Loading ROM Parser", "Error loading " + pScript);
+					JPanel panel = new JPanel(new BorderLayout());
+					Msg.showError(e, panel, "Error Loading ROM Parser", "Error loading " + pScript);
 				}
 		}
 		parser = EFIdraROMFormatLoader.parsers.get(pScript);
+		
+//		String optProcessor = options.getString(PROCESSOR_OPTION, "x86");
+//		try {
+//			Processor.toProcessor(optProcessor);
+//			processor = optProcessor;
+//		} catch (ProcessorNotFoundException e) {
+//			JPanel panel = new JPanel(new BorderLayout());
+//			Msg.showError(this, panel, "Error Setting Processor", 
+//					"Processor " + optProcessor + " not found.");
+//			Msg.error(this, e);
+//		}
+//		
+//		long optSize = options.getLong(WORD_SIZE_OPTION, wordSize);
+//		if (optSize % 8 == 0)
+//			wordSize = optSize;
 	}
 	
 	@Override
@@ -159,8 +186,8 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 
 		EFIdraROMFormatLoader.init(program, monitor);
-		guids = new EFIGUIDs();
-		programBase = program.getImageBase();
+//		guids = new EFIGUIDs();
+//		programBase = program.getImageBase();
 		Listing listing = program.getListing();
 		ProgramModule rootModule = listing.getDefaultRootModule();
 		
