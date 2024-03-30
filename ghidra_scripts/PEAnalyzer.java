@@ -365,8 +365,8 @@ public class PEAnalyzer extends EFIdraExecutableAnalyzerScript {
 				Varnode node = op.getInput(i);
 				HighVariable hVar = node.getHigh();
 				String pName = hVar.getName();
-				if (pName == null || "UNNAMED".equals(pName))
-					pName = "param" + i;;
+				if (pName == null || "UNNAMED".equals(pName) || pName.startsWith("param"))
+					pName = "param" + i;
 				parameters.add(new ParameterImpl(pName, hVar.getDataType(), 
 						currentProgram));
 			}

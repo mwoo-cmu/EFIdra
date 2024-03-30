@@ -203,7 +203,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 						) == (0x100 - checksum8(reader, size - hdrLen))?
 								"File Checksum Valid" : "File Checksum Invalid";
 			}
-			listing.setComment(fileBase, CodeUnit.PRE_COMMENT, 
+			listing.setComment(fileBase, CodeUnit.PLATE_COMMENT, 
 					hdrChecksum + ", " + fileChecksum);
 
 			long fEnd = baseIdx + size;
@@ -272,7 +272,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			}
 			
 			// check 16-bit fv header checksum
-			listing.setComment(fvBase, CodeUnit.PRE_COMMENT, 
+			listing.setComment(fvBase, CodeUnit.PLATE_COMMENT, 
 					(checksum16(reader, hdrLen) == 0) ? "Checksum Valid" : "Checksum Invalid");
 			
 			// parse files in volume
@@ -366,6 +366,8 @@ public class PiFirmwareParser extends EFIdraParserScript {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		
+		labelAllGuids(program);
 	}
 
 	@Override

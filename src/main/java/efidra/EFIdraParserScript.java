@@ -16,11 +16,17 @@ import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.StructureInternal;
+import ghidra.program.model.listing.CodeUnit;
+import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.DataIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.GhidraLittleEndianDataConverter;
 import ghidra.util.Msg;
@@ -29,6 +35,43 @@ import ghidra.util.exception.NotFoundException;
 import ghidra.util.task.TaskMonitor;
 
 public abstract class EFIdraParserScript extends GhidraScript {
+	/**
+	 * This method should be overridden by parsers to determine which fragments
+	 * are executables, which should be exported by the exporter and 
+	 * @param program The program in Ghidra representing the entire ROM
+	 * @param fragment The chunk of the ROM bytes that may or may not represent
+	 * 	an executable
+	 * @return whether or not the given ProgramFragment is an executable
+	 */
+	public abstract boolean isExecutable(Program program, ProgramFragment fragment);
+	
+	/**
+	 * This method should be overridden by parsers to specify the offset from 
+	 * the beginning of the ProgramFragment to the beginning of the actual 
+	 * executable file, to skip over any headers unrelated to the executable itself.
+	 * @param program The program in Ghidra representing the entire ROM
+	 * @param fragment The chunk of ROM bytes representing an executable
+	 * @return The offset from the start of the fragment to the start of the 
+	 * 	actual executable binary data (e.g. the offset to the magic bytes for 
+	 * portable executables and terse executables)
+	 */
+	public abstract long offsetToExecutable(Program program, ProgramFragment fragment);
+	
+	/**
+	 * This method should specify whether this parser can be used to parse the 
+	 * given program. 
+	 * @param program all of the program data
+	 * @return
+	 */
+	public abstract boolean canParse(Program program);
+
+	/**
+	 * This method should be implemented to actually parse the ROM provided in 
+	 * program. 
+	 * @param program The Ghidra program representing the UEFI ROM
+	 * @param tMonitor The task monitor for this parsing job
+	 */
+	public abstract void parseROM(Program program, TaskMonitor tMonitor);
 	
 	/**
 	 * Gets the offset, in bytes, to the given fieldName of the given Structure
@@ -533,42 +576,60 @@ public abstract class EFIdraParserScript extends GhidraScript {
 	}
 	
 	/**
-	 * This method should be overridden by parsers to determine which fragments
-	 * are executables, which should be exported by the exporter and 
-	 * @param program The program in Ghidra representing the entire ROM
-	 * @param fragment The chunk of the ROM bytes that may or may not represent
-	 * 	an executable
-	 * @return whether or not the given ProgramFragment is an executable
+	 * Labels the GUID at the given offset from the given progBase with a
+	 * comment of its readable name, if available. This should be called during 
+	 * the parsing process, and should not be used if labelAllGuids is used.
+	 * @param reader The reader from which to read GUID data
+	 * @param progBase The base address of the program
+	 * @param listing The listing in which to create comments
+	 * @param offset The offset from the base address at which the GUID lies
+	 * @throws IOException if an error occurred reading the GUID bytes
 	 */
-	public abstract boolean isExecutable(Program program, ProgramFragment fragment);
+	protected void labelGuid(BinaryReader reader, Address progBase, Listing listing, 
+			long offset) throws IOException {
+		String guidName = guidToReadable(readGuid(reader, offset));
+		listing.setComment(progBase.add(offset), CodeUnit.EOL_COMMENT, guidName);
+	}
 	
 	/**
-	 * This method should be overridden by parsers to specify the offset from 
-	 * the beginning of the ProgramFragment to the beginning of the actual 
-	 * executable file, to skip over any headers unrelated to the executable itself.
-	 * @param program The program in Ghidra representing the entire ROM
-	 * @param fragment The chunk of ROM bytes representing an executable
-	 * @return The offset from the start of the fragment to the start of the 
-	 * 	actual executable binary data (e.g. the offset to the magic bytes for 
-	 * portable executables and terse executables)
+	 * Recursively labels any components of the given data of the type EFI_GUID
+	 * with a comment of its readable name, if available. Used internally in 
+	 * labelAllGuids.
+	 * @param listing The listing in which to create comments
+	 * @param data The data to find GUIDs in
 	 */
-	public abstract long offsetToExecutable(Program program, ProgramFragment fragment);
+	private void labelGuidsRecursive(Listing listing, Data data) {
+		if ("EFI_GUID".equals(data.getDataType().getName())) {
+			try {
+				byte[] guidBytes = data.getBytes();
+				String guidName = guidBytesToReadable(guidBytes);
+//				symbolTable.createLabel(data.getAddress(), guidName, , SourceType.ANALYSIS);
+				listing.setComment(data.getAddress(), CodeUnit.EOL_COMMENT, guidName);
+			} catch (MemoryAccessException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (data.getNumComponents() > 1) {
+			for (int i = 0; i < data.getNumComponents(); i++) {
+				labelGuidsRecursive(listing, data.getComponent(i));
+			}
+		}
+	}
 	
 	/**
-	 * This method should specify whether this parser can be used to parse the 
-	 * given program. 
-	 * @param program all of the program data
-	 * @return
+	 * Iterates over the program and labels any data with the type EFI_GUID 
+	 * with a comment of its readable name, if available. This should be called
+	 * after parsing is complete. 
+	 * @param program The progam to label GUIDs in
 	 */
-	public abstract boolean canParse(Program program);
-
-	/**
-	 * This method should be implemented to actually parse the ROM provided in 
-	 * program. 
-	 * @param program The Ghidra program representing the UEFI ROM
-	 * @param tMonitor The task monitor for this parsing job
-	 */
-	public abstract void parseROM(Program program, TaskMonitor tMonitor);
+	protected void labelAllGuids(Program program) {
+		Listing listing = program.getListing();
+		DataIterator iter = listing.getDefinedData(true);
+		while (iter.hasNext()) {
+			Data data = iter.next();
+			labelGuidsRecursive(listing, data);
+		}
+	}
 	
 	@Override
 	protected void run() throws Exception {
