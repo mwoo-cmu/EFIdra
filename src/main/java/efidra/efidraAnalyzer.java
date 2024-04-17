@@ -181,6 +181,17 @@ public class efidraAnalyzer extends AbstractAnalyzer {
 //			wordSize = optSize;
 	}
 	
+	public static void setParser(Program program) {
+		if (parser == null) {
+			for (EFIdraParserScript s : EFIdraROMFormatLoader.parsers.values()) {
+				if (s.canParse(program)) {
+					parser = s;
+					break;
+				}
+			}
+		}
+	}
+	
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {

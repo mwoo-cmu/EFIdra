@@ -67,6 +67,10 @@ public class efidraExporter extends Exporter {
 			ZipOutputStream zipOs, File outputDir) throws IllegalArgumentException {
 		if (zipOs == null && outputDir == null)
 			throw new IllegalArgumentException("No output specified.");
+		
+		if (efidraAnalyzer.parser == null)
+			efidraAnalyzer.setParser(program);
+		
 		for (Group programItem : module.getChildren()) {
 			if (programItem instanceof ProgramFragment) {
 				try {

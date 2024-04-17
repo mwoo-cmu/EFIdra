@@ -15,15 +15,18 @@ import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.StringDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.StructureInternal;
 import ghidra.program.model.data.TerminatedUnicodeDataType;
 import ghidra.program.model.listing.CodeUnit;
+import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramFragment;
 import ghidra.program.model.listing.ProgramModule;
 import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockException;
 import ghidra.program.model.mem.MemoryConflictException;
@@ -200,7 +203,7 @@ public class PiFirmwareParser extends EFIdraParserScript {
 				fileChecksum = reader.readByte(baseIdx
 						+ getOffsetToField(EFI_FFS_FILE_HEADER, "IntegrityCheck")
 						+ getOffsetToField(EFI_FFS_INTEGRITY_CHECK, "File")
-						) == (0x100 - checksum8(reader, size - hdrLen))?
+						) == ((0x100 - checksum8(reader, size - hdrLen) & 0xff))?
 								"File Checksum Valid" : "File Checksum Invalid";
 			}
 			listing.setComment(fileBase, CodeUnit.PLATE_COMMENT, 
@@ -351,8 +354,25 @@ public class PiFirmwareParser extends EFIdraParserScript {
 		SymbolTable symbolTable = program.getSymbolTable();
 		try {
 			Address fitPtrAddr = addrFactory.getAddress("ffffffc0");
-			listing.createData(fitPtrAddr, PointerDataType.dataType);
+			Data fitPtr = listing.createData(fitPtrAddr, PointerDataType.dataType);
 			symbolTable.createLabel(fitPtrAddr, "FIT_Table_Pointer", SourceType.ANALYSIS);
+			Address fitTable = (Address) fitPtr.getValue();
+			listing.createData(fitTable, StringDataType.dataType, 5);
+			Address microcodeAddr = fitTable.add(0x10);
+			try {
+				Data microcodePtr = null;
+				do {
+					microcodePtr = listing.createData(microcodeAddr, PointerDataType.dataType);
+					microcodeAddr = microcodeAddr.add(0x10);
+				} while (microcodePtr.getInt(0) != 0xFFFFFFFF);
+				listing.clearCodeUnits(microcodeAddr, microcodeAddr.add(4), false);
+			} catch (AddressOutOfBoundsException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (MemoryAccessException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 			
 			Address entryAddr = addrFactory.getAddress("ffffffe0");
 			listing.createData(entryAddr, PointerDataType.dataType);
