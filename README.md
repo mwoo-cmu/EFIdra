@@ -1,5 +1,5 @@
 # EFIdra
-
+An extensible Ghidra plugin designed to lower the barrier-of-entry to UEFI firmware static reverse engineering.
 
 ## ROM Format JSON Specification
 
